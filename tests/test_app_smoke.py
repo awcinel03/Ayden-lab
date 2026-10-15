@@ -129,3 +129,65 @@ def test_entry_page_renders_results(monkeypatch):
     assert any(h.value == "Provenance" for h in at.header)
     at.segmented_control(key="degree_kind").set_value("in").run()
     assert not at.exception, at.exception
+
+
+def test_enron_page_renders_results(monkeypatch):
+    from lab import db, storage
+
+    run = db.Run(
+        id=2,
+        experiment_slug="enron-email-network",
+        started_at=datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    scalars = {
+        "nodes": 14, "edges": 32, "giant_nodes": 12, "max_degree": 6, "avg_degree": 4.6,
+        "power_law_slope": -1.5, "power_law_intercept": 1.0, "power_law_r2": 0.9,
+        "power_law_points": 2, "avg_path_sampled": 2.0, "random_path": 1.9,
+        "avg_clustering": 0.8, "random_clustering": 0.4, "clustering_ratio": 2.0,
+        "hub_removal_loss": 6, "random_removal_loss": 1, "damage_ratio": 6.0,
+        "communities": 2, "modularity": 0.45, "within_fraction": 0.97, "median_community_size": 6,
+    }  # fmt: skip
+    rows = [{"metric": k, "value": v, "unit": None, "dims": {}} for k, v in scalars.items()]
+    rows += [{"metric": "degree_count", "value": c, "unit": None, "dims": {"degree": d}}
+             for d, c in ((1, 2), (5, 10), (6, 2))]  # fmt: skip
+    curves = (
+        {"strategy": "targeted"},
+        {"strategy": "random", "seed": 42},
+        {"strategy": "random", "seed": 43},
+    )
+    rows += [
+        {"metric": "giant_fraction", "value": 1 - 0.1 * i, "unit": None, "dims": d | {"step": i}}
+        for d in curves
+        for i in range(3)
+    ]
+    rows += [
+        {"metric": "community_size", "value": 6, "unit": None, "dims": {"rank": r}} for r in (1, 2)
+    ]
+    rows += [{"metric": f"sweep_{m}", "value": 0.5, "unit": None, "dims": {"seed": 0}}
+             for m in ("communities", "modularity", "within_fraction")]  # fmt: skip
+    rows += [{"metric": "cross_community_edges", "value": 1, "unit": None,
+              "dims": {"rank": 1, "a": 0, "b": 1, "a_size": 6, "b_size": 6}}]  # fmt: skip
+    tables = {
+        "community_nodes.parquet": pd.DataFrame(
+            {"community": [0, 1], "size": [6, 6], "x": [0.0, 1.0], "y": [0.0, 1.0]}
+        ),
+        "community_edges.parquet": pd.DataFrame({"source": [0], "target": [1], "weight": [1]}),
+    }
+    arts = [db.Artifact("table", f"enron-email-network/2/{n}", 10, None) for n in tables]
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+    monkeypatch.setattr(db, "artifacts", lambda run_id: arts)
+    monkeypatch.setattr(
+        storage, "read_parquet", lambda a: tables[a.storage_path.rsplit("/", 1)[-1]]
+    )
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/enron.py").run()
+    assert not at.exception, at.exception
+    assert [m.value for m in at.metric][:2] == ["14", "32"]
+    assert any(h.value == "Takeaways" for h in at.header)
+    assert not at.info  # community network rendered, no empty state
