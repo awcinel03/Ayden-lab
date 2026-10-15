@@ -1,0 +1,26 @@
+name: Supabase keep-alive
+
+# Free-plan projects pause after 7 days of low activity. One read with the
+# publishable key every 3 days keeps the database awake. Read-only; RLS applies.
+on:
+  schedule:
+    - cron: "17 9 */3 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read one published experiment
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            "$SUPABASE_URL/rest/v1/experiments?select=id&limit=1")
+          echo "HTTP $status"
+          test "$status" = "200"
