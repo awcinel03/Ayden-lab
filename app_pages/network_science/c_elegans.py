@@ -310,11 +310,11 @@ curves = series("giant_fraction", "strategy", "seed", "step")
 rand = curves[curves["strategy"] == "random"]
 band = rand.groupby("step")["value"].agg(["min", "max"]).reset_index()
 first_seed = rand["seed"].min()
-lines = [
+lines = [  # random first so the targeted curves draw on top of it
+    ("random", first_seed, f"Random failure (seed {first_seed:.0f})", BLUE),
     ("targeted", None, "Targeted: highest total degree", ORANGE),
     ("in_degree", None, "Targeted: highest in-degree (integrators)", AQUA),
     ("out_degree", None, "Targeted: highest out-degree (broadcasters)", YELLOW),
-    ("random", first_seed, f"Random failure (seed {first_seed:.0f})", BLUE),
 ]
 rob = go.Figure(
     [
