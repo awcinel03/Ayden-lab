@@ -129,3 +129,14 @@ def test_community_network_and_pairs():
     assert sorted(n["size"] for n in net.nodes) == [5, 5]
     assert [e["weight"] for e in net.edges] == [1]
     assert net == nm.community_network(g, partition, top_k=2, layout_seed=42, layout_k=15)
+
+
+def test_small_world_directed_baseline_uses_directed_density():
+    g = nx.DiGraph([(0, 1), (1, 2), (2, 0), (0, 2)])  # n=3, m=4
+    sw = nm.small_world(g, sample_size=None, seed=0)
+    p = 4 / (3 * 2)
+    assert sw.random_clustering == pytest.approx(p)
+    assert sw.random_path == pytest.approx(math.log(3) / math.log(3 * p))
+    assert sw.avg_clustering == pytest.approx(nx.average_clustering(g))
+    # BFS follows direction: distance sums from 0, 1, 2 are 2, 3 (1->2->0), 3 (2->0->1)
+    assert sw.avg_path == pytest.approx(8 / 9)

@@ -109,8 +109,9 @@ def small_world(g: nx.Graph, *, sample_size: int | None, seed: int) -> SmallWorl
     Average path length is the mean of every BFS distance from ``sample_size``
     sources drawn with ``random.Random(seed).sample(list(g.nodes()), …)``,
     including each source's zero distance to itself (as the notebooks compute it).
-    ``sample_size=None`` uses every node as a source. The baseline is
-    ``p = m / (n(n-1)/2)``, random clustering ``p`` and random path ``ln n / ln(np)``.
+    ``sample_size=None`` uses every node as a source. The baseline density is
+    ``p = m / (n(n-1)/2)``, or ``m / (n(n-1))`` for a directed graph; random
+    clustering is ``p`` and random path ``ln n / ln(np)``.
     """
     nodes = list(g.nodes())
     sources = nodes if sample_size is None else random.Random(seed).sample(nodes, sample_size)
@@ -121,7 +122,7 @@ def small_world(g: nx.Graph, *, sample_size: int | None, seed: int) -> SmallWorl
         count += len(lengths)
     avg_clustering = nx.average_clustering(g)
     n, m = g.number_of_nodes(), g.number_of_edges()
-    p = m / (n * (n - 1) / 2)
+    p = m / (n * (n - 1)) if g.is_directed() else m / (n * (n - 1) / 2)
     return SmallWorld(
         avg_clustering=avg_clustering,
         avg_path=total / count,
