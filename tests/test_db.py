@@ -4,6 +4,7 @@ import io
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 from lab import db, storage
 
@@ -84,3 +85,32 @@ def test_download_error_returns_none(monkeypatch):
     client.storage.from_.return_value.download.side_effect = RuntimeError("403")
     monkeypatch.setattr(db, "get_client", lambda: client)
     assert storage.read_parquet(artifact(10)) is None
+
+
+@pytest.mark.parametrize(
+    ("key", "ok"),
+    [
+        ("sb_publishable_" + "Ab-1_", True),  # split so secret scanners skip it
+        ("sb_publishable_…", False),  # the docs' old placeholder
+        ("<paste the full publishable key>", False),
+        ("sb_secret_" + "Ab-1_", False),
+        ("sb_publishable_", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_publishable_key_format(key, ok):
+    assert db.publishable_key_looks_valid(key) is ok
+
+
+def test_placeholder_key_gives_no_client(monkeypatch):
+    monkeypatch.setattr(
+        db.st,
+        "secrets",
+        {"SUPABASE_URL": "https://x.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_…"},
+    )
+    db.get_client.clear()
+    try:
+        assert db.get_client() is None
+    finally:
+        db.get_client.clear()

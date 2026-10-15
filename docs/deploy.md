@@ -20,12 +20,12 @@ Checklist for the first deploy and later checks. The app is read-only: it needs 
    - **App URL:** pick a subdomain, e.g. `aydens-lab`. You can change it later in App settings.
 4. Click **Advanced settings**:
    - **Python version:** `3.12`. This must match CI and `.python-version`, and you can't change it without deleting and redeploying the app.
-   - **Secrets:** paste exactly these two lines with your values:
+   - **Secrets:** paste exactly these two lines, replacing the angle-bracket text (brackets included) with the full key:
      ```toml
      SUPABASE_URL = "https://mxirjgkdtqfezgmycjwd.supabase.co"
-     SUPABASE_PUBLISHABLE_KEY = "sb_publishable_…"
+     SUPABASE_PUBLISHABLE_KEY = "<paste the full publishable key>"
      ```
-     Never paste `SUPABASE_SECRET_KEY` here.
+     Copy the key with the copy button in Supabase → Project Settings → API Keys; the text shown on screen is abbreviated. Never paste `SUPABASE_SECRET_KEY` here.
 5. Click **Save** and watch the build log on the right.
 
 Community Cloud installs from `requirements.txt`, the first dependency file it finds; `pyproject.toml` here only configures tools. `requirements-pipelines.txt` and `requirements-dev.txt` aren't read. A clean install of `requirements.txt` alone was verified to render every page.
@@ -58,5 +58,6 @@ Community Cloud installs from `requirements.txt`, the first dependency file it f
 | Pages show "No published results yet" | Supabase project paused, or wrong secrets | Restore the project in the Supabase dashboard (possible for 90 days after a pause), then check the two secrets. |
 | Sleeping-app page for visitors | No traffic for 12 h | Expected on Community Cloud. Any visitor can wake it. |
 | Keep-alive stopped running | GitHub disables scheduled workflows after 60 days with no repo activity | Actions → *Supabase keep-alive* → **Enable workflow**, then **Run workflow**. |
+| Log says "SUPABASE_PUBLISHABLE_KEY looks like a placeholder", or a `UnicodeEncodeError` mentions `'\u2026'` | The secret holds the example text or an abbreviated key from the dashboard | Re-copy the key with the dashboard's copy button and replace the value in App settings → Secrets. |
 | `ModuleNotFoundError` in build log | A package the app imports isn't in `requirements.txt` | Add it pinned to `requirements.txt` (not the pipelines file) and push. |
 | "Oh no." error page | Resource limits (about 2.7 GB RAM) or a crash | Check the logs. Apps should read only small results, never raw datasets. |
