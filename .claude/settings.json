@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.streamlit/secrets.toml)",
+      "Edit(./.env)",
+      "Edit(./.env.local)",
+      "Edit(./.streamlit/secrets.toml)",
+      "Bash(supabase projects api-keys --reveal*)",
+      "Bash(printenv*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/secret_guard.py\" pre",
+            "onFailure": "block",
+            "statusMessage": "Checking command for secret exposure"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/secret_guard.py\" post"
+          }
+        ]
+      }
+    ]
+  }
+}
