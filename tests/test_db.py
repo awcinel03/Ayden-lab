@@ -19,7 +19,8 @@ def clear_caches():
     db.get_client.clear()
 
 
-def test_no_secrets_degrades_to_empty():
+def test_no_secrets_degrades_to_empty(monkeypatch):
+    monkeypatch.setattr(db.st, "secrets", {})  # ignore any local .streamlit/secrets.toml
     assert db.get_client() is None
     assert db.latest_run("x") is None
     assert db.results(1).empty
