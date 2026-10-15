@@ -89,7 +89,30 @@ class Entry:
 
 HOME_PATH = "app_pages/home.py"
 
-ENTRIES: tuple[Entry, ...] = ()
+ENTRIES: tuple[Entry, ...] = (
+    Entry(
+        slug="email-eu-core-stats",
+        title="email-Eu-core: basic stats and degree distribution",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.EXPERIMENT,
+        path="app_pages/network_science/graph_stats.py",
+        summary=(
+            "Size, connectivity, clustering and degree distribution of a small directed "
+            "email network from a European research institution (SNAP)."
+        ),
+        date=datetime.date(2026, 10, 15),
+        tags=("snap", "degree-distribution", "directed-graph"),
+        icon=":material/hub:",
+    ),
+)
+
+
+def entry(slug: str) -> Entry:
+    """Return the entry with ``slug``; raises ``KeyError`` if there is none."""
+    for e in ENTRIES:
+        if e.slug == slug:
+            return e
+    raise KeyError(slug)
 
 
 def published_entries(category: Category | None = None) -> list[Entry]:
