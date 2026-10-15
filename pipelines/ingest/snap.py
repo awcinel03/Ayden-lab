@@ -31,6 +31,11 @@ SNAP_CITATION = (
     "Jure Leskovec and Andrej Krevl. SNAP Datasets: Stanford Large Network Dataset "
     "Collection. http://snap.stanford.edu/data, 2014."
 )
+C_ELEGANS_CITATION = (
+    "Marcus Kaiser and Claus C. Hilgetag. Nonoptimal component placement, but short "
+    "processing paths, due to long-distance projections in neural systems. PLoS Comput Biol "
+    "2(7): e95, 2006. | " + SNAP_CITATION
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,8 @@ class SnapSource:
     filename: str
     citation: str
     notes: str
+    format: str = "edgelist.txt.gz"
+    header: bool = False  # first non-comment line is a header, not a row
 
 
 SOURCES: dict[str, SnapSource] = {
@@ -78,6 +85,27 @@ SOURCES: dict[str, SnapSource] = {
             "email was sent in either direction (SNAP collapsed direction). Each undirected edge "
             "appears as two 'u v' lines. Node IDs are anonymised integers."
         ),
+    ),
+    "C-elegans-frontal": SnapSource(
+        slug="snap-c-elegans-frontal",
+        name="C. elegans frontal neural network",
+        url="https://snap.stanford.edu/data/C-elegans-frontal.txt.gz",
+        filename="C-elegans-frontal.txt.gz",
+        citation=C_ELEGANS_CITATION,
+        notes=(
+            "Directed synapse list ('u v' = signal from neuron u to neuron v) of the rostral "
+            "ganglia of C. elegans. Node IDs join to the metadata file's node_id."
+        ),
+    ),
+    "C-elegans-frontal-meta": SnapSource(
+        slug="snap-c-elegans-frontal-meta",
+        name="C. elegans frontal neural network: neuron metadata",
+        url="https://snap.stanford.edu/data/C-elegans-frontal-meta.csv.gz",
+        filename="C-elegans-frontal-meta.csv.gz",
+        citation=C_ELEGANS_CITATION,
+        notes="CSV with columns node_id, name, posx, posy: neuron names and 2D positions.",
+        format="csv.gz",
+        header=True,
     ),
 }
 
@@ -116,10 +144,10 @@ def ingest(client: Client, source: SnapSource, fetch: Callable[[str], bytes] = d
             "license": None,  # not stated by SNAP
             "citation": source.citation,
             "storage_path": f"{BUCKET}/{path}",
-            "format": "edgelist.txt.gz",
+            "format": source.format,
             "bytes": len(data),
             "sha256": sha,
-            "row_count": count_edges(data),
+            "row_count": count_edges(data) - source.header,
             "retrieved_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "notes": source.notes,
         },
