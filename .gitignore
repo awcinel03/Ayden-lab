@@ -27,3 +27,6 @@ data/
 # Locally installed agent skills (third-party; not part of the project)
 .agents/
 .claude/skills/
+
+# Source material for ports (notebooks with review-text outputs, report drafts); local only
+sources/
