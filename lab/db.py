@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,7 @@ from supabase import Client, create_client
 log = logging.getLogger(__name__)
 
 TTL_SECONDS = 3600
+_PUBLISHABLE_KEY_RE = re.compile(r"sb_publishable_[A-Za-z0-9_-]+")
 PAGE_SIZE = 1000  # PostgREST max_rows; larger reads are paged
 
 
@@ -70,7 +72,19 @@ def get_client() -> Client | None:
     except (KeyError, FileNotFoundError):
         log.warning("Supabase secrets not configured; data will be unavailable")
         return None
+    if not publishable_key_looks_valid(key):
+        log.warning(
+            "SUPABASE_PUBLISHABLE_KEY looks like a placeholder or is truncated (expected "
+            "'sb_publishable_' followed by ASCII letters, digits, '-' or '_'); "
+            "data will be unavailable"
+        )
+        return None
     return create_client(url, key)
+
+
+def publishable_key_looks_valid(key: object) -> bool:
+    """True if ``key`` has the publishable-key format. Never logs or returns the value."""
+    return isinstance(key, str) and _PUBLISHABLE_KEY_RE.fullmatch(key) is not None
 
 
 def _require_client() -> Client:
