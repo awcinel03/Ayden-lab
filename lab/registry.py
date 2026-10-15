@@ -104,6 +104,21 @@ ENTRIES: tuple[Entry, ...] = (
         tags=("snap", "degree-distribution", "directed-graph"),
         icon=":material/hub:",
     ),
+    Entry(
+        slug="enron-email-network",
+        title="Enron email network",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.EXPERIMENT,
+        path="app_pages/network_science/enron.py",
+        summary=(
+            "How Enron's email network organised itself and why that made it fragile: "
+            "scale-free hubs, small-world paths, collapse under targeted attack, and "
+            "Louvain communities that recover the org chart."
+        ),
+        date=datetime.date(2026, 10, 15),
+        tags=("snap", "scale-free", "robustness", "louvain"),
+        icon=":material/mail:",
+    ),
 )
 
 
