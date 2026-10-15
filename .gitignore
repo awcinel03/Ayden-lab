@@ -23,3 +23,7 @@ data/
 .DS_Store
 .vscode/
 .idea/
+
+# Locally installed agent skills (third-party; not part of the project)
+.agents/
+.claude/skills/
