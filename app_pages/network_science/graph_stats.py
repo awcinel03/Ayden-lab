@@ -76,14 +76,14 @@ st.altair_chart(
     loglog_scatter(
         selected, x="degree", y="nodes", x_title=f"{kind.capitalize()} degree", y_title="Nodes"
     ),
-    use_container_width=True,
+    width="stretch",
 )
 zero = int(selected.loc[selected["degree"] == 0, "nodes"].sum())
 st.caption(
     f"Log-log axes. {zero} node(s) with {kind} degree 0 are not shown." if zero else "Log-log axes."
 )
 with st.expander("Data"):
-    st.dataframe(selected, hide_index=True, use_container_width=True)
+    st.dataframe(selected, hide_index=True, width="stretch")
 
 st.header("Takeaways")
 mean_total = 2 * value("mean_in_degree")
