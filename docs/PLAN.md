@@ -292,3 +292,14 @@ Still open:
 5. **Example dataset:** keep email-Eu-core, or switch to ca-GrQc (§7.7 item 12)?
 6. **Supabase project:** do you already have one, and is it on the Free plan? Is it new (created after 2026-05-30, so the grant change already applies)?
 7. Should BRIEF.md be committed in the docs commit, alongside PLAN.md and CLAUDE.md? My default is yes.
+
+## Addendum (2026-10-15): pre-approved for the network-science entries
+
+The owner approved these in advance for the Enron, C. elegans and wine flavor entries (`sources/network-project-prompts.md`). Sessions don't need to stop and ask about them, but must still log each one in `docs/DECISIONS.md`.
+
+1. **Charts:** use whichever library is better for the interactive network visualizations. Plotly is approved for app pages. Pin it in `requirements.txt` at the newest stable release at least ~2 weeks old. Altair stays fine for simple charts.
+2. **Dependencies:** add whatever a faithful port needs (e.g. `python-louvain`, `scipy`, `numpy`). Pin each one. App-only packages go in `requirements.txt`, pipeline-only packages in `requirements-pipelines.txt`. The app must never need a pipeline package.
+3. **Branches:** `feat/*` branch names from the prompts are allowed. The session adds `feat/*` to the push triggers in `.github/workflows/ci.yml`.
+4. **Discrepancies:** follow each prompt's instructions as written. Deterministic values must match exactly and stochastic values must be close. On any mismatch, stop and report with a diagnosis, and never tune to force a match. Recompute the disputed log-log fit (slope 0.06, R² 0.010) and report the true value.
+
+Everything else in CLAUDE.md still applies: stop at milestones, run the pre-commit checks, follow the secrets rules, and merge only after approval.
