@@ -1,0 +1,25 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local data (data belongs in Supabase)
+data/
+*.parquet
+*.gz
+*.zip
+*.csv
+*.tsv
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
