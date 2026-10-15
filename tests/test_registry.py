@@ -1,5 +1,6 @@
 """The registry and app_pages/ must agree, and identifiers must be unique."""
 
+import re
 from pathlib import Path
 
 from lab.registry import ENTRIES, HOME_PATH, Category
@@ -30,3 +31,19 @@ def test_slugs_and_url_paths_are_unique():
 def test_entries_live_in_their_category_directory():
     for e in ENTRIES:
         assert e.path.startswith(f"app_pages/{e.category.key}/"), e.slug
+
+
+def test_app_code_never_touches_pipelines_or_secret_key():
+    app_files = [
+        ROOT / "streamlit_app.py",
+        *(ROOT / "lab").rglob("*.py"),
+        *(ROOT / "app_pages").rglob("*.py"),
+    ]
+    for path in app_files:
+        text = path.read_text()
+        assert not re.search(r"^\s*(from|import)\s+pipelines\b", text, re.M), (
+            f"{path} imports pipelines"
+        )
+        assert "SECRET_KEY" not in text and "sb_secret_" not in text, (
+            f"{path} references the secret key"
+        )

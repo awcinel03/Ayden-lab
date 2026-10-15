@@ -1,0 +1,3 @@
+# Offline pipelines only. Never installed on Community Cloud.
+-r requirements.txt
+python-dotenv==1.2.4
