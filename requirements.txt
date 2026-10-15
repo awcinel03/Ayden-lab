@@ -1,0 +1,5 @@
+# App deploy manifest for Streamlit Community Cloud. Pinned; see docs/PLAN.md §7.4.
+streamlit==1.65.0
+pandas==3.0.6
+pyarrow==25.0.1
+altair==6.3.0
