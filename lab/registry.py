@@ -119,6 +119,21 @@ ENTRIES: tuple[Entry, ...] = (
         tags=("snap", "scale-free", "robustness", "louvain"),
         icon=":material/mail:",
     ),
+    Entry(
+        slug="c-elegans-connectome",
+        title="C. elegans frontal connectome",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.EXPERIMENT,
+        path="app_pages/network_science/c_elegans.py",
+        summary=(
+            "The worm's directed neural wiring: no power law and no critical hubs, neuron "
+            "roles read from signal direction, a small world that tolerates damage, and "
+            "evenly sized, well-integrated circuits."
+        ),
+        date=datetime.date(2026, 10, 15),
+        tags=("snap", "directed-graph", "connectome", "robustness", "louvain"),
+        icon=":material/neurology:",
+    ),
 )
 
 

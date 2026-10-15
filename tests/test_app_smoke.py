@@ -191,3 +191,94 @@ def test_enron_page_renders_results(monkeypatch):
     assert [m.value for m in at.metric][:2] == ["14", "32"]
     assert any(h.value == "Takeaways" for h in at.header)
     assert not at.info  # community network rendered, no empty state
+
+
+def test_c_elegans_page_renders_results(monkeypatch):
+    from lab import db, storage
+
+    run = db.Run(
+        id=3,
+        experiment_slug="c-elegans-connectome",
+        started_at=datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    scalars = {
+        "nodes": 3, "edges": 4, "mean_degree": 2.67, "median_degree": 3, "max_degree": 3,
+        "power_law_slope": 0.1, "power_law_intercept": 0.2, "power_law_r2": 0.01,
+        "avg_path_sampled": 1.2, "random_path": 1.1, "avg_clustering": 0.5,
+        "random_clustering": 0.6, "clustering_ratio": 0.8, "signal_toward_centre": 1,
+        "signal_away_from_centre": 3, "communities": 1, "modularity": 0.0, "within_fraction": 1.0,
+    }  # fmt: skip
+    rows = [{"metric": k, "value": v, "unit": None, "dims": {}} for k, v in scalars.items()]
+    rows += [
+        {"metric": "degree_count", "value": c, "unit": None, "dims": {"degree": d}}
+        for d, c in ((2, 2), (3, 2))
+    ]
+    rows += [
+        {"metric": "role_count", "value": 1, "unit": None, "dims": {"role": r}}
+        for r in ("integrator", "broadcaster", "relay")
+    ]
+    curves = [
+        ({"strategy": "targeted"}, 31),
+        ({"strategy": "in_degree"}, 3),
+        ({"strategy": "out_degree"}, 3),
+        ({"strategy": "random", "seed": 42}, 31),
+        ({"strategy": "random", "seed": 43}, 31),
+    ]
+    rows += [
+        {"metric": "giant_fraction", "value": 1 - 0.01 * i, "unit": None, "dims": d | {"step": i}}
+        for d, n in curves
+        for i in range(n)
+    ]
+    rows += [{"metric": "community_size", "value": 3, "unit": None, "dims": {"rank": 1}}]
+    rows += [
+        {
+            "metric": "hub_community",
+            "value": 3,
+            "unit": None,
+            "dims": {"rank": 1, "neuron": "AVAL", "community": 0, "community_size": 3},
+        }
+    ]
+    rows += [
+        {"metric": f"sweep_{m}", "value": 1, "unit": None, "dims": {"seed": 0}}
+        for m in ("communities", "modularity", "within_fraction")
+    ]
+    tables = {
+        "neurons.parquet": pd.DataFrame(
+            {
+                "neuron": ["AVAL", "RIH", "RIAR"],
+                "x": [0.0, 1.0, 0.5],
+                "y": [0.0, 0.0, 1.0],
+                "in_degree": [0, 2, 2],
+                "out_degree": [2, 0, 2],
+                "total_degree": [2, 2, 4],
+                "role": ["broadcaster", "integrator", "relay"],
+                "community": [0, 0, 0],
+                "hub": [False, False, True],
+            }
+        ),
+        "synapses.parquet": pd.DataFrame(
+            {
+                "source": ["AVAL", "AVAL", "RIAR", "RIAR"],
+                "target": ["RIH", "RIAR", "RIH", "AVAL"],
+                "toward_centre": [True, False, False, False],
+            }
+        ),
+    }
+    arts = [db.Artifact("table", f"c-elegans-connectome/3/{n}", 10, None) for n in tables]
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+    monkeypatch.setattr(db, "artifacts", lambda run_id: arts)
+    monkeypatch.setattr(
+        storage, "read_parquet", lambda a: tables[a.storage_path.rsplit("/", 1)[-1]]
+    )
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/c_elegans.py").run()
+    assert not at.exception, at.exception
+    assert [m.value for m in at.metric][:2] == ["3", "4"]
+    assert any(h.value == "Takeaways" for h in at.header)
+    assert not at.info  # neuron map rendered, no empty state
