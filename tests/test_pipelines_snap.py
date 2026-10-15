@@ -75,3 +75,14 @@ def test_enron_source_is_mirrored_with_citations():
     assert row["slug"] == "snap-email-enron" and row["license"] is None
     assert "Klimmt" in row["citation"] and "SNAP" in row["citation"]
     assert row["source_url"] == "https://snap.stanford.edu/data/email-Enron.txt.gz"
+
+
+def test_csv_source_records_format_and_skips_header_row():
+    client, datasets = mock_client()
+    meta = snap.SOURCES["C-elegans-frontal-meta"]
+    csv = gzip.compress(b"node_id,name,posx,posy\n0,ADFL,0.1,0.0\n1,ADFR,0.2,0.0\n")
+    assert snap.ingest(client, meta, fetch=lambda url: csv) == "updated"
+    row = datasets.upsert.call_args.args[0]
+    assert row["format"] == "csv.gz" and row["row_count"] == 2
+    assert "Kaiser" in row["citation"] and row["slug"] == "snap-c-elegans-frontal-meta"
+    assert snap.SOURCES["C-elegans-frontal"].format == "edgelist.txt.gz"
