@@ -1,8 +1,10 @@
 """AppTest smoke tests: navigation shape and every registered page renders."""
 
+import datetime
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -62,7 +64,68 @@ def test_page_header_renders():
     assert at.title[0].value == "Demo entry"
 
 
-def test_home_shows_empty_state():
+def test_home_lists_published_entries():
     at = AppTest.from_file(APP).run()
     assert at.title[0].value == "Ayden's Lab"
-    assert any("No entries yet" in i.value for i in at.info)
+    assert not at.info  # entries exist, so no empty state
+    assert len(published_entries()) >= 1
+
+
+def test_entry_page_without_data_shows_empty_state():
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/graph_stats.py").run()
+    assert not at.exception, at.exception
+    assert any("No published results yet" in i.value for i in at.info)
+
+
+def test_entry_page_renders_results(monkeypatch):
+    from lab import db
+
+    run = db.Run(
+        id=1,
+        experiment_slug="email-eu-core-stats",
+        started_at=datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC),
+        finished_at=datetime.datetime(2026, 10, 15, 0, 1, tzinfo=datetime.UTC),
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    scalars = {
+        "nodes": 4,
+        "edges": 5,
+        "density": 0.4,
+        "reciprocity": 0.6,
+        "mean_in_degree": 1.25,
+        "largest_wcc_fraction": 1.0,
+        "largest_scc_fraction": 0.75,
+        "average_clustering": 0.5,
+        "transitivity": 0.4,
+        "max_total_degree": 4,
+    }
+    rows = [{"metric": k, "value": v, "unit": None, "dims": {}} for k, v in scalars.items()]
+    rows += [
+        {"metric": "degree_count", "value": c, "unit": None, "dims": {"kind": k, "degree": d}}
+        for k in ("total", "in", "out")
+        for d, c in ((0, 1), (2, 2), (4, 1))
+    ]
+    dataset = db.Dataset(
+        slug="snap-email-eu-core",
+        name="email-Eu-core network",
+        source="Stanford SNAP",
+        source_url="https://snap.stanford.edu/data/email-Eu-core.html",
+        license=None,
+        citation="Leskovec et al.",
+        sha256="ab" * 32,
+        retrieved_at=datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC),
+        row_count=5,
+    )
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [dataset])
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/graph_stats.py").run()
+    assert not at.exception, at.exception
+    assert [m.value for m in at.metric][:2] == ["4", "5"]
+    assert any(h.value == "Provenance" for h in at.header)
+    at.segmented_control(key="degree_kind").set_value("in").run()
+    assert not at.exception, at.exception

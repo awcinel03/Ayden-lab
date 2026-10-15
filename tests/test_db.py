@@ -4,23 +4,11 @@ import io
 from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
-import streamlit as st
 
 from lab import db, storage
 
 
-@pytest.fixture(autouse=True)
-def clear_caches():
-    st.cache_data.clear()
-    db.get_client.clear()
-    yield
-    st.cache_data.clear()
-    db.get_client.clear()
-
-
-def test_no_secrets_degrades_to_empty(monkeypatch):
-    monkeypatch.setattr(db.st, "secrets", {})  # ignore any local .streamlit/secrets.toml
+def test_no_secrets_degrades_to_empty():  # conftest hides any local secrets
     assert db.get_client() is None
     assert db.latest_run("x") is None
     assert db.results(1).empty
