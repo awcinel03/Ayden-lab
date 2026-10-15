@@ -64,3 +64,14 @@ def test_compute_on_small_graph():
         if r["metric"] == "degree_count" and r["dims"]["kind"] == "total"
     }
     assert sum(total.values()) == 4  # every node counted once
+
+
+def test_enron_source_is_mirrored_with_citations():
+    client, datasets = mock_client()
+    enron = snap.SOURCES["email-Enron"]
+    assert snap.ingest(client, enron, fetch=lambda url: GZ) == "updated"
+    assert client.storage.from_.return_value.upload.call_args.args[0] == "snap/email-Enron.txt.gz"
+    row = datasets.upsert.call_args.args[0]
+    assert row["slug"] == "snap-email-enron" and row["license"] is None
+    assert "Klimmt" in row["citation"] and "SNAP" in row["citation"]
+    assert row["source_url"] == "https://snap.stanford.edu/data/email-Enron.txt.gz"

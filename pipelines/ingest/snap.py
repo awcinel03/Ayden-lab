@@ -62,6 +62,23 @@ SOURCES: dict[str, SnapSource] = {
             "of a European research institution. Node IDs are integers."
         ),
     ),
+    "email-Enron": SnapSource(
+        slug="snap-email-enron",
+        name="Enron email network",
+        url="https://snap.stanford.edu/data/email-Enron.txt.gz",
+        filename="email-Enron.txt.gz",
+        citation=(
+            "J. Leskovec, K. Lang, A. Dasgupta, M. Mahoney. Community Structure in Large "
+            "Networks: Natural Cluster Sizes and the Absence of Large Well-Defined Clusters. "
+            "Internet Mathematics 6(1) 29-123, 2009. | B. Klimmt, Y. Yang. Introducing the "
+            "Enron corpus. CEAS 2004. | " + SNAP_CITATION
+        ),
+        notes=(
+            "Undirected edge list of email between Enron addresses: an edge means at least one "
+            "email was sent in either direction (SNAP collapsed direction). Each undirected edge "
+            "appears as two 'u v' lines. Node IDs are anonymised integers."
+        ),
+    ),
 }
 
 
