@@ -1,0 +1,1059 @@
+{
+  "name": "Wine flavor lexicon",
+  "version": 2,
+  "source": "Same 116 terms, order and categories as v1, copied from the original 'Wine Semantics' notebook (FLAVOR_LEXICON); categories are the notebook's comments, built from the UC Davis Wine Aroma Wheel (Ann Noble). Do not edit: a change requires a new version file.",
+  "rule": "Whole-token matching. A review is lower-cased and split into tokens with the regex \\w+ (runs of letters, digits and underscore; hyphens, apostrophes and punctuation separate tokens). A review mentions a term if any of the term's accepted forms is one of its tokens. Forms are the term plus inflections and derivations of the same flavour (plurals, -y/-ed/-ness/-like adjectives and nouns, a few same-flavour compounds and spellings). Excluded: words that contain the term but mean something else (tart, star, breadth, prosecco), tokens that are or contain another lexicon term (pineapple, honeysuckle, acidity), negations (unoaked), proper names and typos. Each form belongs to exactly one term.",
+  "notes": "Forms reviewed and approved by the owner on 2026-10-16. v1 (substring matching) stays unchanged in wine_flavor_lexicon_v1.json. The notebook literal lists 'flint' twice (Earthy/Savory and Other); as a Python set it is one term, kept here under its first category.",
+  "terms": [
+    {
+      "term": "cherry",
+      "category": "Fruity - Red",
+      "forms": [
+        "cherry",
+        "cherries",
+        "cherrylike",
+        "cherryish"
+      ]
+    },
+    {
+      "term": "raspberry",
+      "category": "Fruity - Red",
+      "forms": [
+        "raspberry",
+        "raspberries",
+        "raspberrylike"
+      ]
+    },
+    {
+      "term": "strawberry",
+      "category": "Fruity - Red",
+      "forms": [
+        "strawberry",
+        "strawberries",
+        "strawberrylike"
+      ]
+    },
+    {
+      "term": "blackberry",
+      "category": "Fruity - Red",
+      "forms": [
+        "blackberry",
+        "blackberries",
+        "blackberryish"
+      ]
+    },
+    {
+      "term": "blueberry",
+      "category": "Fruity - Red",
+      "forms": [
+        "blueberry",
+        "blueberries"
+      ]
+    },
+    {
+      "term": "plum",
+      "category": "Fruity - Red",
+      "forms": [
+        "plum",
+        "plums",
+        "plummy",
+        "plumminess",
+        "plummier",
+        "plumy"
+      ]
+    },
+    {
+      "term": "currant",
+      "category": "Fruity - Red",
+      "forms": [
+        "currant",
+        "currants",
+        "curranty",
+        "blackcurrant",
+        "blackcurrants",
+        "redcurrant",
+        "redcurrants"
+      ]
+    },
+    {
+      "term": "cranberry",
+      "category": "Fruity - Red",
+      "forms": [
+        "cranberry",
+        "cranberries",
+        "cranberryish"
+      ]
+    },
+    {
+      "term": "pomegranate",
+      "category": "Fruity - Red",
+      "forms": [
+        "pomegranate",
+        "pomegranates"
+      ]
+    },
+    {
+      "term": "fig",
+      "category": "Fruity - Red",
+      "forms": [
+        "fig",
+        "figs",
+        "figgy",
+        "figginess"
+      ]
+    },
+    {
+      "term": "prune",
+      "category": "Fruity - Red",
+      "forms": [
+        "prune",
+        "prunes",
+        "pruney",
+        "pruneyness"
+      ]
+    },
+    {
+      "term": "apple",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "apple",
+        "apples",
+        "appley",
+        "applesauce"
+      ]
+    },
+    {
+      "term": "pear",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "pear",
+        "pears",
+        "pearlike"
+      ]
+    },
+    {
+      "term": "peach",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "peach",
+        "peaches",
+        "peachy",
+        "peachiness",
+        "peachier",
+        "peachiest"
+      ]
+    },
+    {
+      "term": "apricot",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "apricot",
+        "apricots",
+        "apricotty",
+        "apricoty"
+      ]
+    },
+    {
+      "term": "nectarine",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "nectarine",
+        "nectarines"
+      ]
+    },
+    {
+      "term": "mango",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "mango",
+        "mangoes",
+        "mangos"
+      ]
+    },
+    {
+      "term": "pineapple",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "pineapple",
+        "pineapples",
+        "pineappley"
+      ]
+    },
+    {
+      "term": "citrus",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "citrus",
+        "citrusy",
+        "citrussy",
+        "citruslike"
+      ]
+    },
+    {
+      "term": "lemon",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "lemon",
+        "lemons",
+        "lemony"
+      ]
+    },
+    {
+      "term": "lime",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "lime",
+        "limes",
+        "limey"
+      ]
+    },
+    {
+      "term": "grapefruit",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "grapefruit",
+        "grapefruits",
+        "grapefruity"
+      ]
+    },
+    {
+      "term": "orange",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "orange",
+        "oranges",
+        "orangey"
+      ]
+    },
+    {
+      "term": "melon",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "melon",
+        "melons",
+        "melony"
+      ]
+    },
+    {
+      "term": "honeydew",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "honeydew"
+      ]
+    },
+    {
+      "term": "passion",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "passion",
+        "passionfruit"
+      ]
+    },
+    {
+      "term": "guava",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "guava",
+        "guavas"
+      ]
+    },
+    {
+      "term": "lychee",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "lychee",
+        "lychees"
+      ]
+    },
+    {
+      "term": "quince",
+      "category": "Fruity - White/Tropical",
+      "forms": [
+        "quince"
+      ]
+    },
+    {
+      "term": "rose",
+      "category": "Floral",
+      "forms": [
+        "rose",
+        "roses",
+        "rosebud",
+        "rosebuds",
+        "rosewater"
+      ]
+    },
+    {
+      "term": "violet",
+      "category": "Floral",
+      "forms": [
+        "violet",
+        "violets",
+        "violety"
+      ]
+    },
+    {
+      "term": "lavender",
+      "category": "Floral",
+      "forms": [
+        "lavender"
+      ]
+    },
+    {
+      "term": "jasmine",
+      "category": "Floral",
+      "forms": [
+        "jasmine"
+      ]
+    },
+    {
+      "term": "honeysuckle",
+      "category": "Floral",
+      "forms": [
+        "honeysuckle",
+        "honeysuckles"
+      ]
+    },
+    {
+      "term": "floral",
+      "category": "Floral",
+      "forms": [
+        "floral",
+        "florals",
+        "florality",
+        "florally"
+      ]
+    },
+    {
+      "term": "blossom",
+      "category": "Floral",
+      "forms": [
+        "blossom",
+        "blossoms",
+        "blossomy"
+      ]
+    },
+    {
+      "term": "lilac",
+      "category": "Floral",
+      "forms": [
+        "lilac",
+        "lilacs"
+      ]
+    },
+    {
+      "term": "iris",
+      "category": "Floral",
+      "forms": [
+        "iris"
+      ]
+    },
+    {
+      "term": "geranium",
+      "category": "Floral",
+      "forms": [
+        "geranium",
+        "geraniums"
+      ]
+    },
+    {
+      "term": "pepper",
+      "category": "Spice",
+      "forms": [
+        "pepper",
+        "peppers",
+        "peppery",
+        "peppercorn",
+        "peppercorns",
+        "peppered",
+        "pepperiness",
+        "pepperier"
+      ]
+    },
+    {
+      "term": "cinnamon",
+      "category": "Spice",
+      "forms": [
+        "cinnamon",
+        "cinnamonlike",
+        "cinnamony"
+      ]
+    },
+    {
+      "term": "clove",
+      "category": "Spice",
+      "forms": [
+        "clove",
+        "cloves",
+        "cloved"
+      ]
+    },
+    {
+      "term": "nutmeg",
+      "category": "Spice",
+      "forms": [
+        "nutmeg"
+      ]
+    },
+    {
+      "term": "anise",
+      "category": "Spice",
+      "forms": [
+        "anise",
+        "aniseed",
+        "anisette"
+      ]
+    },
+    {
+      "term": "licorice",
+      "category": "Spice",
+      "forms": [
+        "licorice"
+      ]
+    },
+    {
+      "term": "vanilla",
+      "category": "Spice",
+      "forms": [
+        "vanilla",
+        "vanillas"
+      ]
+    },
+    {
+      "term": "cardamom",
+      "category": "Spice",
+      "forms": [
+        "cardamom"
+      ]
+    },
+    {
+      "term": "ginger",
+      "category": "Spice",
+      "forms": [
+        "ginger",
+        "gingery"
+      ]
+    },
+    {
+      "term": "thyme",
+      "category": "Spice",
+      "forms": [
+        "thyme"
+      ]
+    },
+    {
+      "term": "rosemary",
+      "category": "Spice",
+      "forms": [
+        "rosemary"
+      ]
+    },
+    {
+      "term": "herbs",
+      "category": "Spice",
+      "forms": [
+        "herbs",
+        "herb"
+      ]
+    },
+    {
+      "term": "herbal",
+      "category": "Spice",
+      "forms": [
+        "herbal",
+        "herbals",
+        "herbally",
+        "herbalness",
+        "herbality"
+      ]
+    },
+    {
+      "term": "mint",
+      "category": "Spice",
+      "forms": [
+        "mint",
+        "mints",
+        "minty",
+        "mintiness",
+        "mintier"
+      ]
+    },
+    {
+      "term": "eucalyptus",
+      "category": "Spice",
+      "forms": [
+        "eucalyptus"
+      ]
+    },
+    {
+      "term": "fennel",
+      "category": "Spice",
+      "forms": [
+        "fennel"
+      ]
+    },
+    {
+      "term": "dill",
+      "category": "Spice",
+      "forms": [
+        "dill"
+      ]
+    },
+    {
+      "term": "earth",
+      "category": "Earthy/Savory",
+      "forms": [
+        "earth",
+        "earthy",
+        "earthiness",
+        "earthier",
+        "earthiest",
+        "earthily",
+        "earthen"
+      ]
+    },
+    {
+      "term": "leather",
+      "category": "Earthy/Savory",
+      "forms": [
+        "leather",
+        "leathery",
+        "leatheriness"
+      ]
+    },
+    {
+      "term": "tobacco",
+      "category": "Earthy/Savory",
+      "forms": [
+        "tobacco",
+        "tobaccoey"
+      ]
+    },
+    {
+      "term": "smoke",
+      "category": "Earthy/Savory",
+      "forms": [
+        "smoke",
+        "smoked",
+        "smokes"
+      ]
+    },
+    {
+      "term": "smoky",
+      "category": "Earthy/Savory",
+      "forms": [
+        "smoky",
+        "smokey",
+        "smokiness"
+      ]
+    },
+    {
+      "term": "mushroom",
+      "category": "Earthy/Savory",
+      "forms": [
+        "mushroom",
+        "mushrooms",
+        "mushroomy"
+      ]
+    },
+    {
+      "term": "truffle",
+      "category": "Earthy/Savory",
+      "forms": [
+        "truffle",
+        "truffles",
+        "truffled",
+        "truffley"
+      ]
+    },
+    {
+      "term": "forest",
+      "category": "Earthy/Savory",
+      "forms": [
+        "forest",
+        "forests",
+        "foresty",
+        "forested"
+      ]
+    },
+    {
+      "term": "soil",
+      "category": "Earthy/Savory",
+      "forms": [
+        "soil",
+        "soils"
+      ]
+    },
+    {
+      "term": "dust",
+      "category": "Earthy/Savory",
+      "forms": [
+        "dust",
+        "dusty",
+        "dustiness",
+        "dustily",
+        "dustier",
+        "dusts"
+      ]
+    },
+    {
+      "term": "clay",
+      "category": "Earthy/Savory",
+      "forms": [
+        "clay",
+        "claylike"
+      ]
+    },
+    {
+      "term": "graphite",
+      "category": "Earthy/Savory",
+      "forms": [
+        "graphite"
+      ]
+    },
+    {
+      "term": "mineral",
+      "category": "Earthy/Savory",
+      "forms": [
+        "mineral",
+        "minerals",
+        "minerality",
+        "minerally",
+        "mineraly"
+      ]
+    },
+    {
+      "term": "chalk",
+      "category": "Earthy/Savory",
+      "forms": [
+        "chalk",
+        "chalky",
+        "chalkiness",
+        "chalkiest"
+      ]
+    },
+    {
+      "term": "slate",
+      "category": "Earthy/Savory",
+      "forms": [
+        "slate",
+        "slatey"
+      ]
+    },
+    {
+      "term": "flint",
+      "category": "Earthy/Savory",
+      "forms": [
+        "flint",
+        "flinty",
+        "flintiness",
+        "flintier",
+        "gunflint"
+      ]
+    },
+    {
+      "term": "gravel",
+      "category": "Earthy/Savory",
+      "forms": [
+        "gravel",
+        "gravels",
+        "gravelly"
+      ]
+    },
+    {
+      "term": "petrol",
+      "category": "Earthy/Savory",
+      "forms": [
+        "petrol",
+        "petroleum",
+        "petrolly"
+      ]
+    },
+    {
+      "term": "diesel",
+      "category": "Earthy/Savory",
+      "forms": [
+        "diesel",
+        "diesely"
+      ]
+    },
+    {
+      "term": "tar",
+      "category": "Earthy/Savory",
+      "forms": [
+        "tar",
+        "tarry",
+        "tarriness"
+      ]
+    },
+    {
+      "term": "rubber",
+      "category": "Earthy/Savory",
+      "forms": [
+        "rubber",
+        "rubbery"
+      ]
+    },
+    {
+      "term": "oak",
+      "category": "Oak/Wood",
+      "forms": [
+        "oak",
+        "oaky",
+        "oaked",
+        "oakiness",
+        "oakier",
+        "oakiest",
+        "oaken",
+        "oaking",
+        "overoaked"
+      ]
+    },
+    {
+      "term": "cedar",
+      "category": "Oak/Wood",
+      "forms": [
+        "cedar",
+        "cedary"
+      ]
+    },
+    {
+      "term": "wood",
+      "category": "Oak/Wood",
+      "forms": [
+        "wood",
+        "wooded",
+        "wooden",
+        "woodsy"
+      ]
+    },
+    {
+      "term": "woody",
+      "category": "Oak/Wood",
+      "forms": [
+        "woody",
+        "woodiness"
+      ]
+    },
+    {
+      "term": "toast",
+      "category": "Oak/Wood",
+      "forms": [
+        "toast",
+        "toasts",
+        "toasted",
+        "toasting",
+        "overtoasted"
+      ]
+    },
+    {
+      "term": "toasty",
+      "category": "Oak/Wood",
+      "forms": [
+        "toasty",
+        "toastiness",
+        "toastier"
+      ]
+    },
+    {
+      "term": "coffee",
+      "category": "Oak/Wood",
+      "forms": [
+        "coffee"
+      ]
+    },
+    {
+      "term": "chocolate",
+      "category": "Oak/Wood",
+      "forms": [
+        "chocolate",
+        "chocolatey"
+      ]
+    },
+    {
+      "term": "cocoa",
+      "category": "Oak/Wood",
+      "forms": [
+        "cocoa"
+      ]
+    },
+    {
+      "term": "caramel",
+      "category": "Oak/Wood",
+      "forms": [
+        "caramel",
+        "caramels",
+        "caramelized",
+        "caramelised",
+        "caramelly",
+        "caramelization"
+      ]
+    },
+    {
+      "term": "mocha",
+      "category": "Oak/Wood",
+      "forms": [
+        "mocha"
+      ]
+    },
+    {
+      "term": "espresso",
+      "category": "Oak/Wood",
+      "forms": [
+        "espresso"
+      ]
+    },
+    {
+      "term": "butter",
+      "category": "Oak/Wood",
+      "forms": [
+        "butter",
+        "buttered",
+        "buttery",
+        "butteriness"
+      ]
+    },
+    {
+      "term": "cream",
+      "category": "Oak/Wood",
+      "forms": [
+        "cream",
+        "creams",
+        "creamy",
+        "creaminess",
+        "creamed",
+        "creamier",
+        "creamily",
+        "creamiest"
+      ]
+    },
+    {
+      "term": "brioche",
+      "category": "Oak/Wood",
+      "forms": [
+        "brioche"
+      ]
+    },
+    {
+      "term": "bread",
+      "category": "Oak/Wood",
+      "forms": [
+        "bread",
+        "breads",
+        "bready",
+        "breadiness"
+      ]
+    },
+    {
+      "term": "biscuit",
+      "category": "Oak/Wood",
+      "forms": [
+        "biscuit",
+        "biscuits",
+        "biscuity"
+      ]
+    },
+    {
+      "term": "hazelnut",
+      "category": "Oak/Wood",
+      "forms": [
+        "hazelnut",
+        "hazelnuts",
+        "hazelnutty"
+      ]
+    },
+    {
+      "term": "almond",
+      "category": "Oak/Wood",
+      "forms": [
+        "almond",
+        "almonds",
+        "almondy"
+      ]
+    },
+    {
+      "term": "walnut",
+      "category": "Oak/Wood",
+      "forms": [
+        "walnut",
+        "walnuts"
+      ]
+    },
+    {
+      "term": "coconut",
+      "category": "Oak/Wood",
+      "forms": [
+        "coconut",
+        "coconutty",
+        "coconuty"
+      ]
+    },
+    {
+      "term": "honey",
+      "category": "Other",
+      "forms": [
+        "honey",
+        "honeyed",
+        "honeylike",
+        "honeycomb"
+      ]
+    },
+    {
+      "term": "jam",
+      "category": "Other",
+      "forms": [
+        "jam",
+        "jams",
+        "jammy",
+        "jamminess",
+        "jammier",
+        "jammiest",
+        "jammily"
+      ]
+    },
+    {
+      "term": "dried",
+      "category": "Other",
+      "forms": [
+        "dried"
+      ]
+    },
+    {
+      "term": "fresh",
+      "category": "Other",
+      "forms": [
+        "fresh",
+        "freshness",
+        "fresher",
+        "freshest"
+      ]
+    },
+    {
+      "term": "tannin",
+      "category": "Other",
+      "forms": [
+        "tannin",
+        "tannins",
+        "tannic"
+      ]
+    },
+    {
+      "term": "acid",
+      "category": "Other",
+      "forms": [
+        "acid",
+        "acids",
+        "acidic"
+      ]
+    },
+    {
+      "term": "acidity",
+      "category": "Other",
+      "forms": [
+        "acidity"
+      ]
+    },
+    {
+      "term": "salt",
+      "category": "Other",
+      "forms": [
+        "salt",
+        "salts",
+        "salty",
+        "salted",
+        "saltiness"
+      ]
+    },
+    {
+      "term": "savory",
+      "category": "Other",
+      "forms": [
+        "savory",
+        "savoury",
+        "savoriness"
+      ]
+    },
+    {
+      "term": "umami",
+      "category": "Other",
+      "forms": [
+        "umami"
+      ]
+    },
+    {
+      "term": "barnyard",
+      "category": "Other",
+      "forms": [
+        "barnyard",
+        "barnyardy"
+      ]
+    },
+    {
+      "term": "brett",
+      "category": "Other",
+      "forms": [
+        "brett",
+        "bretty",
+        "brettanomyces"
+      ]
+    },
+    {
+      "term": "yeast",
+      "category": "Other",
+      "forms": [
+        "yeast",
+        "yeasts",
+        "yeasty",
+        "yeastiness",
+        "yeastier",
+        "yeastily"
+      ]
+    },
+    {
+      "term": "steel",
+      "category": "Other",
+      "forms": [
+        "steel",
+        "steely",
+        "steeliness",
+        "steelier"
+      ]
+    },
+    {
+      "term": "iron",
+      "category": "Other",
+      "forms": [
+        "iron"
+      ]
+    },
+    {
+      "term": "blood",
+      "category": "Other",
+      "forms": [
+        "blood",
+        "bloody"
+      ]
+    },
+    {
+      "term": "meat",
+      "category": "Other",
+      "forms": [
+        "meat",
+        "meats",
+        "meaty",
+        "meatiness",
+        "meatier"
+      ]
+    },
+    {
+      "term": "game",
+      "category": "Other",
+      "forms": [
+        "game",
+        "gamey",
+        "gamy",
+        "gaminess"
+      ]
+    }
+  ]
+}

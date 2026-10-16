@@ -1,0 +1,472 @@
+{
+  "name": "Wine flavor lexicon",
+  "version": 1,
+  "source": "Copied verbatim from the original 'Wine Semantics' notebook (FLAVOR_LEXICON); categories are the notebook's comments, built from the UC Davis Wine Aroma Wheel (Ann Noble). Do not edit: a change requires a new version file.",
+  "notes": "The notebook literal lists 'flint' twice (Earthy/Savory and Other); as a Python set it is one term, kept here under its first category.",
+  "terms": [
+    {
+      "term": "cherry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "raspberry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "strawberry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "blackberry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "blueberry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "plum",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "currant",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "cranberry",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "pomegranate",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "fig",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "prune",
+      "category": "Fruity - Red"
+    },
+    {
+      "term": "apple",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "pear",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "peach",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "apricot",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "nectarine",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "mango",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "pineapple",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "citrus",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "lemon",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "lime",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "grapefruit",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "orange",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "melon",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "honeydew",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "passion",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "guava",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "lychee",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "quince",
+      "category": "Fruity - White/Tropical"
+    },
+    {
+      "term": "rose",
+      "category": "Floral"
+    },
+    {
+      "term": "violet",
+      "category": "Floral"
+    },
+    {
+      "term": "lavender",
+      "category": "Floral"
+    },
+    {
+      "term": "jasmine",
+      "category": "Floral"
+    },
+    {
+      "term": "honeysuckle",
+      "category": "Floral"
+    },
+    {
+      "term": "floral",
+      "category": "Floral"
+    },
+    {
+      "term": "blossom",
+      "category": "Floral"
+    },
+    {
+      "term": "lilac",
+      "category": "Floral"
+    },
+    {
+      "term": "iris",
+      "category": "Floral"
+    },
+    {
+      "term": "geranium",
+      "category": "Floral"
+    },
+    {
+      "term": "pepper",
+      "category": "Spice"
+    },
+    {
+      "term": "cinnamon",
+      "category": "Spice"
+    },
+    {
+      "term": "clove",
+      "category": "Spice"
+    },
+    {
+      "term": "nutmeg",
+      "category": "Spice"
+    },
+    {
+      "term": "anise",
+      "category": "Spice"
+    },
+    {
+      "term": "licorice",
+      "category": "Spice"
+    },
+    {
+      "term": "vanilla",
+      "category": "Spice"
+    },
+    {
+      "term": "cardamom",
+      "category": "Spice"
+    },
+    {
+      "term": "ginger",
+      "category": "Spice"
+    },
+    {
+      "term": "thyme",
+      "category": "Spice"
+    },
+    {
+      "term": "rosemary",
+      "category": "Spice"
+    },
+    {
+      "term": "herbs",
+      "category": "Spice"
+    },
+    {
+      "term": "herbal",
+      "category": "Spice"
+    },
+    {
+      "term": "mint",
+      "category": "Spice"
+    },
+    {
+      "term": "eucalyptus",
+      "category": "Spice"
+    },
+    {
+      "term": "fennel",
+      "category": "Spice"
+    },
+    {
+      "term": "dill",
+      "category": "Spice"
+    },
+    {
+      "term": "earth",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "leather",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "tobacco",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "smoke",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "smoky",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "mushroom",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "truffle",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "forest",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "soil",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "dust",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "clay",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "graphite",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "mineral",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "chalk",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "slate",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "flint",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "gravel",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "petrol",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "diesel",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "tar",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "rubber",
+      "category": "Earthy/Savory"
+    },
+    {
+      "term": "oak",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "cedar",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "wood",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "woody",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "toast",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "toasty",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "coffee",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "chocolate",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "cocoa",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "caramel",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "mocha",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "espresso",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "butter",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "cream",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "brioche",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "bread",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "biscuit",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "hazelnut",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "almond",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "walnut",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "coconut",
+      "category": "Oak/Wood"
+    },
+    {
+      "term": "honey",
+      "category": "Other"
+    },
+    {
+      "term": "jam",
+      "category": "Other"
+    },
+    {
+      "term": "dried",
+      "category": "Other"
+    },
+    {
+      "term": "fresh",
+      "category": "Other"
+    },
+    {
+      "term": "tannin",
+      "category": "Other"
+    },
+    {
+      "term": "acid",
+      "category": "Other"
+    },
+    {
+      "term": "acidity",
+      "category": "Other"
+    },
+    {
+      "term": "salt",
+      "category": "Other"
+    },
+    {
+      "term": "savory",
+      "category": "Other"
+    },
+    {
+      "term": "umami",
+      "category": "Other"
+    },
+    {
+      "term": "barnyard",
+      "category": "Other"
+    },
+    {
+      "term": "brett",
+      "category": "Other"
+    },
+    {
+      "term": "yeast",
+      "category": "Other"
+    },
+    {
+      "term": "steel",
+      "category": "Other"
+    },
+    {
+      "term": "iron",
+      "category": "Other"
+    },
+    {
+      "term": "blood",
+      "category": "Other"
+    },
+    {
+      "term": "meat",
+      "category": "Other"
+    },
+    {
+      "term": "game",
+      "category": "Other"
+    }
+  ]
+}
