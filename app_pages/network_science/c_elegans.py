@@ -29,11 +29,11 @@ page_header(ENTRY)
 st.header("Purpose")
 st.write(
     "What did evolution optimise the worm's nervous system for? *C. elegans* was the first "
-    "animal to have its neural wiring mapped. This entry applies the same framework as the "
+    "animal to have its neural wiring mapped. Here I apply the same framework as in the "
     "Enron entry (degree distribution, small-world properties, robustness, community "
     "structure) to the 131 neurons of its frontal ganglia, where every edge has a direction: "
-    "the flow of a signal across a synapse. It is Chapter 2 of *Conspiracies, Connectomes, "
-    "and Cabernet*."
+    "the flow of a signal across a synapse. It is Chapter 2 of my write-up "
+    "*Conspiracies, Connectomes, and Cabernet*."
 )
 
 st.header("Method")
@@ -441,8 +441,8 @@ bullets = [
     f"{value('power_law_slope'):.2f}, R² {value('power_law_r2'):.3f}). Degrees cluster around "
     f"the mean of {value('mean_degree'):.2f} (median {value('median_degree'):.0f}), and the "
     f"busiest neuron has degree {value('max_degree'):.0f}, only "
-    f"{value('max_degree') / value('mean_degree'):.1f}× the mean. The author reads this as "
-    "evolution favouring a distributed nervous system over a hub-dependent one.",
+    f"{value('max_degree') / value('mean_degree'):.1f}× the mean. I read this as evolution "
+    "favouring a distributed nervous system over a hub-dependent one.",
 ]
 if have_graph:
     by = neurons.set_index("neuron")
@@ -457,9 +457,9 @@ if have_graph:
         f"{by.at[top_out, 'out_degree']}) and also receives {by.at[top_out, 'in_degree']}, the "
         "profile of an interneuron that gathers and redistributes signals. "
         + (f"{pair} send far more than they receive. " if pair else "")
-        + "The report connects these profiles to known biology (relay interneurons; command "
-        "interneurons that drive locomotion); that is interpretation from the neuroscience "
-        "literature, not something this analysis tests."
+        + "I connect these profiles to known biology (relay interneurons; command "
+        "interneurons that drive locomotion), but that link comes from the neuroscience "
+        "literature, not from anything this analysis tests."
     )
 bullets += [
     f"**Small world without hubs.** Neurons are {value('avg_path_sampled'):.2f} synaptic hops "
@@ -471,9 +471,9 @@ bullets += [
     "difference. There is no single point of failure.",
     f"**Integrated circuits.** Louvain finds {value('communities'):.0f} communities of fairly even "
     f"size (modularity {value('modularity'):.3f}), and {1 - value('within_fraction'):.0%} of "
-    "connections cross community boundaries. The author suggests the communities correspond to "
-    "functional circuits (locomotion, chemosensation, feeding); confirming that would need the "
-    "neuroscience literature.",
+    "connections cross community boundaries. I suspect the communities correspond to "
+    "functional circuits (locomotion, chemosensation, feeding), though confirming that would "
+    "need the neuroscience literature.",
 ]
 st.markdown("\n".join(f"- {b}" for b in bullets))
 
