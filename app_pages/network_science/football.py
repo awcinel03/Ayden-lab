@@ -12,38 +12,76 @@ from lab.ui import empty_state, page_header, provenance_footer
 ENTRY = entry("arsenal-passing-networks")
 CODE_PATHS = (
     "pipelines/ingest/statsbomb.py",
+    "pipelines/common/markov.py",
     "pipelines/experiments/network_science/football.py",
 )
-BLUE = "#2a78d6"  # categorical slot 1 (validated palette)
+# Categorical slots 1-2 (validated palette), assigned in fixed order; gray for references.
+BLUE, ORANGE, GRAY = "#2a78d6", "#eb6834", "#8a8a85"
+RESULT_COLORS = {"W": BLUE, "D": ORANGE, "L": GRAY}
+RESULT_NAMES = {"W": "Win", "D": "Draw", "L": "Loss"}
 PITCH, LINES = "#2d8c3c", "rgba(255, 255, 255, 0.85)"  # the pitch is a surface, not data
 LENGTH, WIDTH = 120, 80  # StatsBomb pitch coordinates; y runs top to bottom
 # StatsBomb's licence requires its logo on any published analysis of the data.
 ASSETS = Path(__file__).resolve().parents[2] / "lab" / "assets"
+SEASON_METRICS = {
+    "intensity": ("Intensity", "completed passes per minute"),
+    "centralization": ("Centralization", "0 = everyone equally involved, 1 = one hub"),
+    "density": ("Density", "share of possible passing links used"),
+    "mean_entropy": ("Passing entropy", "bits; how evenly players spread their passes"),
+    "reciprocity": ("Reciprocity", "share of passes returned along the same link"),
+    "ei": ("Effective information", "bits; how specific the passing chain is"),
+}
+NULL_METRICS = {
+    "ei": "Effective information",
+    "mean_entropy": "Passing entropy",
+    "density": "Density",
+    "top_pair_share": "Strongest partnership",
+    "reciprocity": "Reciprocity",
+    "ce_roles": "Causal emergence (roles)",
+}
 
 page_header(ENTRY)
 
 st.header("Purpose")
 st.write(
     "A football team is a network: players are nodes and every completed pass is a directed, "
-    "weighted edge. I wanted to see what Arsène Wenger's 2003/04 *Invincibles* look like "
-    "drawn that way: who the ball flowed through, which partnerships carried it, and where "
-    "on the pitch each player actually did their work. I compare two matches from that "
-    "unbeaten season, a 2-1 home win over Chelsea and the 0-0 draw at Old Trafford."
+    "weighted edge. I started by drawing two matches from Arsène Wenger's 2003/04 "
+    "*Invincibles*, a 2-1 home win over Chelsea and the 0-0 draw at Old Trafford, to see who "
+    "the ball flowed through and which partnerships carried it. Here I extend that to all 38 "
+    "matches of the unbeaten league season and ask two harder questions: is Arsenal's passing "
+    "structure more than what pass volumes alone would produce, and is the team better "
+    "described as eleven individual players or as a handful of positional roles?"
 )
 
 st.header("Method")
 st.markdown(
     "- **Data:** [StatsBomb open data](https://github.com/statsbomb/open-data) event files for "
-    "both matches: every pass with its passer, recipient, start and end location and outcome. "
-    "Lineups supply players' common names (Lauren, Edu, Gilberto Silva).\n"
-    "- **Network:** Arsenal's *completed* passes only (StatsBomb records no outcome for a "
-    "completed pass). An edge *A → B* is weighted by how many passes A completed to B. "
-    "Substitutes appear if they touched the ball.\n"
-    "- **Position on the pitch:** each player sits at the average of where they made their "
-    "completed passes and where they received them. Node size is passes made.\n"
-    "- **Drawing:** to keep the picture readable, only links of 3 or more passes are drawn "
-    "(all links count in the numbers). Arsenal attack left to right in both matches.\n"
-    "- **Average degree:** in + out connections per player, unweighted."
+    "all 38 Premier League matches of 2003/04 (Arsenal's matches are the only ones in the "
+    "set). Lineups supply players' common names (Lauren, Edu, Gilberto Silva).\n"
+    "- **Full-match network** (the pitch view): Arsenal's *completed* passes; an edge "
+    "*A → B* is weighted by how many passes A completed to B; each player sits at the "
+    "average of where they made and received passes. Substitutes appear if they touched "
+    "the ball.\n"
+    "- **Window network** (everything else): only the starting XI, from kick-off until "
+    "Arsenal's first substitution or red card, so that every match compares the same eleven "
+    "nodes. Median window: about 69 minutes.\n"
+    "- **Structure:** intensity (passes per minute), density, centralization of involvement, "
+    "each player's passing entropy, reciprocity and the strongest partnership's share. "
+    "Definitions are in the run config below.\n"
+    "- **Uncertainty:** 500 bootstrap resamples of each match's passes, with *basic* 95% "
+    "intervals. Entropy-based measures are biased upward in samples this small, and the "
+    "basic interval corrects for that bias.\n"
+    "- **Against chance:** 500 random versions of each match that keep every player's numbers "
+    "of passes made and received, but reassign who passed to whom (a configuration model). "
+    "A measure is *beyond chance* when it falls outside the middle 95% of those versions.\n"
+    "- **Players or positions:** each player's passes, as shares, define a Markov chain of "
+    "possession. Its *effective information* (EI; Klein & Hoel 2020) measures how specifically "
+    "the ball's next destination depends on who has it. *Causal emergence* is the EI gained "
+    "by merging players into larger units, either roles (side × line, so the centre-back "
+    "pair is one unit) or lines (keeper, defence, midfield, attack). I compare roles with "
+    "500 random groupings of the same sizes, and let a greedy search look for any grouping "
+    "that helps. Finally I pool the whole season by starting position, which gives about "
+    "11,700 passes and removes most small-sample bias."
 )
 
 run = db.latest_run(ENTRY.slug)
@@ -52,6 +90,14 @@ if run is None or results.empty:
     st.header("Results")
     empty_state("No published results yet. They appear here once the pipeline has run.")
     st.stop()
+
+scalars = results[results["dims"].map(len) == 0].set_index("metric")["value"]
+
+
+def value(metric: str) -> float:
+    """A season-level scalar, or NaN if this run did not record it."""
+    v = scalars.get(metric)
+    return float("nan") if v is None or pd.isna(v) else float(v)
 
 
 def series(metric: str, *dims: str) -> pd.DataFrame:
@@ -62,23 +108,24 @@ def series(metric: str, *dims: str) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-matches = series("match_info", "match", "date", "home", "away", "home_score", "away_score")
+matches = series("match_info", "match", "date", "home", "away", "home_score", "away_score",
+                 "opponent", "venue", "result", "featured")  # fmt: skip
 if matches.empty:
     st.header("Results")
     empty_state("This run recorded no matches.")
     st.stop()
 matches["match"] = matches["match"].astype(int)
+matches = matches.sort_values("date").reset_index(drop=True)
 matches["title"] = matches.apply(
     lambda m: f"{m.home} {m.home_score}-{m.away_score} {m.away}", axis=1
 )
 titles = dict(zip(matches["match"], matches["title"], strict=True))
-summary = pd.concat(
-    [
-        series(m, "match").set_index("match")["value"].rename(m)
-        for m in ("completed_passes", "players", "connections", "average_degree")
-    ],
-    axis=1,
+per_match = (
+    results[results["dims"].map(lambda d: set(d) == {"match"})]
+    .assign(match=lambda r: r["dims"].map(lambda d: int(d["match"])))
+    .pivot_table(index="match", columns="metric", values="value", aggfunc="first")
 )
+season = matches.set_index("match").join(per_match)
 players = series("passes_made", "match", "player", "label", "position", "x", "y", "received")
 links = series("pass_link", "match", "passer", "recipient")
 
@@ -86,9 +133,19 @@ links = series("pass_link", "match", "passer", "recipient")
 def stat(match_id: int, metric: str) -> float:
     """A per-match scalar, or NaN if this run did not record it."""
     try:
-        return float(summary.at[match_id, metric])
+        return float(season.at[match_id, metric])
     except KeyError:
         return float("nan")
+
+
+def beyond(metric: str) -> tuple[int, int, int]:
+    """Matches where the observed value is below, inside or above the null's middle 95%."""
+    pct = season.get(f"w_{metric}_null_pct", pd.Series(dtype=float)).dropna()
+    return (
+        int((pct < 0.025).sum()),
+        int(((pct >= 0.025) & (pct <= 0.975)).sum()),
+        int((pct > 0.975).sum()),
+    )
 
 
 def pitch_shapes() -> list[dict]:
@@ -205,74 +262,324 @@ def network_figure(match_id: int, min_passes: int) -> go.Figure:
 
 
 st.header("Results")
-cols = st.columns(len(matches))
-for col, m in zip(cols, matches.itertuples(), strict=True):
-    with col:
-        st.markdown(f"**{m.title}** · {m.date}")
-        with st.container(horizontal=True):
-            st.metric("Completed passes", f"{stat(m.match, 'completed_passes'):,.0f}", border=True)
-            st.metric("Players", f"{stat(m.match, 'players'):.0f}", border=True)
-            st.metric("Connections", f"{stat(m.match, 'connections'):.0f}", border=True)
-            st.metric("Avg degree", f"{stat(m.match, 'average_degree'):.2f}", border=True)
+n_matches = len(matches)
+record = matches["result"].value_counts()
+with st.container(horizontal=True):
+    st.metric("Matches", f"{n_matches}", border=True)
+    st.metric("Record", f"{record.get('W', 0)}W {record.get('D', 0)}D {record.get('L', 0)}L",
+              border=True)  # fmt: skip
+    st.metric("Window passes per match", f"{season['w_passes'].mean():.0f}", border=True)
+    st.metric("Pooled passes", f"{value('pooled_passes'):,.0f}", border=True)
 
-st.subheader("Passing network on the pitch")
-with st.container(horizontal=True, vertical_alignment="bottom"):
-    match_id = st.segmented_control(
-        "Match",
-        options=list(titles),
-        format_func=titles.get,
-        default=next(iter(titles)),
-        key="match",
-    )
-    min_passes = st.slider("Draw links with at least", 1, 10, 3, key="min_passes")
-match_id = match_id if match_id is not None else next(iter(titles))
-st.plotly_chart(network_figure(match_id, min_passes), key="network", width="stretch")
-st.caption(
-    "Hover a player or a link for counts. Line width and opacity scale with passes on that "
-    "link; arrows point from passer to recipient. Labels are common names or surnames."
+overview, pitch, chance, scales = st.tabs(
+    ["Season overview", "Match on the pitch", "Against chance", "Players or positions?"]
 )
 
-nodes = players[players["match"] == match_id]
-left, right = st.columns(2)
-with left:
-    st.markdown("**Strongest links**")
-    names = dict(zip(nodes["player"], nodes["label"], strict=True))
-    top = links[links["match"] == match_id].nlargest(10, "value")
+with overview:
+    choice = st.segmented_control(
+        "Measure",
+        options=list(SEASON_METRICS),
+        format_func=lambda k: SEASON_METRICS[k][0],
+        default="intensity",
+        key="season_metric",
+    )
+    choice = choice or "intensity"
+    label, help_text = SEASON_METRICS[choice]
+    fig = go.Figure()
+    for result, color in RESULT_COLORS.items():
+        part = season[season["result"] == result]
+        if part.empty:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(part["date"]),
+                y=part[f"w_{choice}"],
+                mode="markers",
+                name=RESULT_NAMES[result],
+                marker={"size": 10, "color": color, "line": {"color": "white", "width": 2}},
+                error_y={
+                    "type": "data",
+                    "symmetric": False,
+                    "array": (part[f"w_{choice}_hi"] - part[f"w_{choice}"]).clip(lower=0),
+                    "arrayminus": (part[f"w_{choice}"] - part[f"w_{choice}_lo"]).clip(lower=0),
+                    "color": color,
+                    "thickness": 1.5,
+                    "width": 0,
+                },
+                customdata=part[["title", "venue"]].to_numpy(),
+                hovertemplate=(
+                    f"<b>%{{customdata[0]}}</b> (%{{customdata[1]}})<br>{label}: %{{y:.3f}}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+    fig.update_layout(
+        height=380,
+        margin={"l": 0, "r": 0, "t": 30, "b": 0},
+        yaxis_title=f"{label} ({help_text})",
+        legend={"orientation": "h", "y": 1.12},
+    )
+    st.plotly_chart(fig, key="season_chart", width="stretch", theme="streamlit")
+    st.caption(
+        "One point per match (starting-XI window), with its 95% bootstrap interval. For "
+        "entropy and effective information the interval sits below the point: the plug-in "
+        "estimate is biased upward, and the interval corrects for it."
+    )
+    rho = series("season_spearman_goal_diff", "stat").set_index("stat")["value"]
+    pval = series("season_spearman_goal_diff_p", "stat").set_index("stat")["value"]
+    if not rho.empty:
+        st.markdown(
+            "**Does structure track the scoreline?** Spearman correlation with goal "
+            "difference, with permutation p-values: "
+            + "; ".join(
+                f"{SEASON_METRICS[s][0].lower()} ρ = {rho[s]:+.2f} (p = {pval[s]:.2f})"
+                for s in rho.index
+                if s in SEASON_METRICS
+            )
+            + ". None is distinguishable from chance. With 38 matches and no defeats I "
+            "treat this as exploratory."
+        )
+
+with pitch:
+    featured = matches[matches["featured"].astype(bool)]["match"].tolist()
+    default = featured[0] if featured else int(matches["match"].iloc[0])
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        match_id = st.selectbox(
+            "Match",
+            options=matches["match"].tolist(),
+            index=matches["match"].tolist().index(default),
+            format_func=lambda m: f"{season.at[m, 'date']} · {titles[m]}",
+            key="match",
+        )
+        min_passes = st.slider("Draw links with at least", 1, 10, 3, key="min_passes")
+    with st.container(horizontal=True):
+        st.metric("Completed passes", f"{stat(match_id, 'completed_passes'):,.0f}", border=True)
+        st.metric("Players", f"{stat(match_id, 'players'):.0f}", border=True)
+        st.metric("Connections", f"{stat(match_id, 'connections'):.0f}", border=True)
+        st.metric("Avg degree", f"{stat(match_id, 'average_degree'):.2f}", border=True)
+    st.plotly_chart(network_figure(match_id, min_passes), key="network", width="stretch")
+    st.caption(
+        "Full match. Hover a player or a link for counts. Line width and opacity scale with "
+        "passes on that link; arrows point from passer to recipient."
+    )
+    nodes = players[players["match"] == match_id]
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Strongest links**")
+        names = dict(zip(nodes["player"], nodes["label"], strict=True))
+        top = links[links["match"] == match_id].nlargest(10, "value")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Passer": top["passer"].map(names),
+                    "Recipient": top["recipient"].map(names),
+                    "Passes": top["value"].astype(int),
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+    with right:
+        st.markdown("**Passes made, by player**")
+        ranked = nodes.sort_values("value")
+        bars = go.Figure(
+            go.Bar(
+                x=ranked["value"],
+                y=ranked["label"],
+                orientation="h",
+                marker_color=BLUE,
+                customdata=ranked[["position", "received"]].to_numpy(),
+                hovertemplate=(
+                    "<b>%{y}</b> (%{customdata[0]})<br>%{x:.0f} made · "
+                    "%{customdata[1]:.0f} received<extra></extra>"
+                ),
+            )
+        )
+        bars.update_layout(
+            height=380, margin={"l": 0, "r": 0, "t": 10, "b": 0}, xaxis_title="Completed passes"
+        )
+        st.plotly_chart(bars, key="passers", width="stretch", theme="streamlit")
+
+with chance:
+    counts = {k: beyond(k) for k in NULL_METRICS}
     st.dataframe(
         pd.DataFrame(
             {
-                "Passer": top["passer"].map(names),
-                "Recipient": top["recipient"].map(names),
-                "Passes": top["value"].astype(int),
+                "Measure": [NULL_METRICS[k] for k in counts],
+                "Below chance": [c[0] for c in counts.values()],
+                "Within chance": [c[1] for c in counts.values()],
+                "Above chance": [c[2] for c in counts.values()],
             }
         ),
         hide_index=True,
         width="stretch",
     )
-with right:
-    st.markdown("**Passes made, by player**")
-    ranked = nodes.sort_values("value")
-    bars = go.Figure(
-        go.Bar(
-            x=ranked["value"],
-            y=ranked["label"],
-            orientation="h",
-            marker_color=BLUE,
-            customdata=ranked[["position", "received"]].to_numpy(),
-            hovertemplate=(
-                "<b>%{y}</b> (%{customdata[0]})<br>%{x:.0f} made · "
-                "%{customdata[1]:.0f} received<extra></extra>"
-            ),
+    st.caption(
+        f"Number of matches (of {n_matches}) where Arsenal's value falls below, inside or "
+        "above the middle 95% of 500 random versions that keep each player's pass volumes."
+    )
+    pick = st.segmented_control(
+        "Show",
+        options=list(NULL_METRICS),
+        format_func=NULL_METRICS.get,
+        default="ei",
+        key="null_metric",
+    )
+    pick = pick or "ei"
+    ordered = season.sort_values("date")
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(ordered["date"]),
+            y=ordered[f"w_{pick}_null_mean"],
+            mode="markers",
+            name="Random versions (mean ± 2 sd)",
+            marker={"size": 8, "color": GRAY, "symbol": "line-ew-open", "line": {"width": 2}},
+            error_y={
+                "type": "data",
+                "array": 2 * ordered[f"w_{pick}_null_sd"],
+                "color": GRAY,
+                "thickness": 6,
+                "width": 0,
+            },
+            hovertemplate="Random: %{y:.3f}<extra></extra>",
         )
     )
-    bars.update_layout(
-        height=380, margin={"l": 0, "r": 0, "t": 10, "b": 0}, xaxis_title="Completed passes"
+    fig.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(ordered["date"]),
+            y=ordered[f"w_{pick}"],
+            mode="markers",
+            name="Arsenal",
+            marker={"size": 9, "color": BLUE, "line": {"color": "white", "width": 2}},
+            customdata=ordered[["title"]].to_numpy(),
+            hovertemplate="<b>%{customdata[0]}</b><br>Arsenal: %{y:.3f}<extra></extra>",
+        )
     )
-    st.plotly_chart(bars, key="passers", width="stretch", theme="streamlit")
+    fig.update_layout(
+        height=380,
+        margin={"l": 0, "r": 0, "t": 30, "b": 0},
+        yaxis_title=NULL_METRICS[pick],
+        legend={"orientation": "h", "y": 1.12},
+    )
+    st.plotly_chart(fig, key="null_chart", width="stretch", theme="streamlit")
+
+with scales:
+    roles_neg = value("season_ce_roles_negative")
+    lines_neg = value("season_ce_lines_negative")
+    roles_upper_neg = int((season["w_ce_roles_hi"] < 0).sum())
+    with st.container(horizontal=True):
+        st.metric("Mean EI, players", f"{season['w_ei'].mean():.2f} bits", border=True)
+        st.metric("Grouping by role loses information", f"{roles_neg:.0f} / {n_matches}",
+                  border=True)  # fmt: skip
+        st.metric("Grouping by line loses information", f"{lines_neg:.0f} / {n_matches}",
+                  border=True)  # fmt: skip
+        st.metric("Pooled season, roles", f"{value('pooled_ce_roles'):+.2f} bits", border=True)
+    ordered = season.sort_values("date")
+    fig = go.Figure()
+    fig.add_hline(y=0, line={"color": GRAY, "width": 1, "dash": "dash"})
+    fig.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(ordered["date"]),
+            y=ordered["w_ce_roles_random_mean"],
+            mode="markers",
+            name="Random groupings, same sizes (mean)",
+            marker={"size": 9, "color": GRAY, "symbol": "diamond-open", "line": {"width": 2}},
+            hovertemplate="Random groupings: %{y:+.3f} bits<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=pd.to_datetime(ordered["date"]),
+            y=ordered["w_ce_roles"],
+            mode="markers",
+            name="Grouping by role",
+            marker={"size": 9, "color": BLUE, "line": {"color": "white", "width": 2}},
+            error_y={
+                "type": "data",
+                "symmetric": False,
+                "array": (ordered["w_ce_roles_hi"] - ordered["w_ce_roles"]).clip(lower=0),
+                "arrayminus": (ordered["w_ce_roles"] - ordered["w_ce_roles_lo"]).clip(lower=0),
+                "color": BLUE,
+                "thickness": 1.5,
+                "width": 0,
+            },
+            customdata=ordered[["title"]].to_numpy(),
+            hovertemplate="<b>%{customdata[0]}</b><br>Roles: %{y:+.3f} bits<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        height=380,
+        margin={"l": 0, "r": 0, "t": 30, "b": 0},
+        yaxis_title="Causal emergence (bits; above 0 = grouping helps)",
+        legend={"orientation": "h", "y": 1.12},
+    )
+    st.plotly_chart(fig, key="ce_chart", width="stretch", theme="streamlit")
+    st.caption(
+        f"Below the dashed line, describing the team by roles loses information compared "
+        f"with describing it by players. The whole 95% interval is below zero in "
+        f"{roles_upper_neg} of {n_matches} matches. Intervals sit mostly above their points "
+        "because player-level EI is inflated in small samples, which pushes this estimate "
+        "down; the interval corrects for that."
+    )
+    transitions = series("role_transition", "match", "source", "target")
+    focus = transitions[transitions["match"] == default]
+    if not focus.empty:
+        order = ["GK", "L-DEF", "C-DEF", "R-DEF", "L-MID", "C-MID", "R-MID", "L-ATT", "C-ATT",
+                 "R-ATT"]  # fmt: skip
+        present = [r for r in order if r in set(focus["source"])] + sorted(
+            set(focus["source"]) - set(order)
+        )
+        grid = focus.pivot(index="source", columns="target", values="value").reindex(
+            index=present, columns=present
+        )
+        heat = go.Figure(
+            go.Heatmap(
+                z=grid.to_numpy(),
+                x=present,
+                y=present,
+                colorscale=[[0, "#f0efec"], [1, "#104281"]],
+                zmin=0,
+                zmax=float(grid.max().max()),
+                colorbar={"title": "P(next)"},
+                hovertemplate="%{y} → %{x}: %{z:.0%}<extra></extra>",
+            )
+        )
+        heat.update_layout(
+            height=420,
+            margin={"l": 0, "r": 0, "t": 30, "b": 0},
+            xaxis_title="Ball goes to",
+            yaxis_title="Ball is with",
+            yaxis={"autorange": "reversed"},
+            title=f"The role-level chain, {titles[default]}",
+        )
+        st.plotly_chart(heat, key="role_chain", width="stretch", theme="streamlit")
+        st.caption(
+            "What the coarse-grained description looks like: transition probabilities between "
+            "roles, weighted by how often each player passes. The diagonal is passing within "
+            "a role (for example, centre-back to centre-back)."
+        )
+    groups = series("pooled_greedy_group", "group", "slots")
+    found = "; ".join(" + ".join(g) for g in groups["slots"]) if not groups.empty else ""
+    st.markdown(
+        f"**Pooled season.** By starting position over the season "
+        f"({value('pooled_passes'):,.0f} passes, {value('pooled_slots'):.0f} slots), grouping "
+        f"by role changes EI by {value('pooled_ce_roles'):+.2f} bits and by line "
+        f"{value('pooled_ce_lines'):+.2f}. The best grouping the greedy search found gains "
+        f"{value('pooled_ce_greedy'):+.3f} bits"
+        + (f", by merging {found}" if found else "")
+        + ". That is negligible."
+    )
 
 st.header("Takeaways")
+ei_below, _, ei_above = beyond("ei")
+ent_below, _, _ = beyond("mean_entropy")
+dens_below, _, _ = beyond("density")
+_, rec_within, _ = beyond("reciprocity")
+ce_below, _, _ = beyond("ce_roles")
+beats_random = value("season_ce_roles_beats_random_median")
 bullets = []
-for m in matches.itertuples():
+for m in matches[matches["featured"].astype(bool)].itertuples():
     mp = players[players["match"] == m.match]
     ml = links[links["match"] == m.match]
     if mp.empty or ml.empty:
@@ -284,45 +591,32 @@ for m in matches.itertuples():
     pair = float(top.value) + (float(back.iloc[0]) if not back.empty else 0.0)
     bullets.append(
         f"**{m.title}.** {hub.label} ({hub.position}) made the most completed passes "
-        f"({hub.value:.0f} of {stat(m.match, 'completed_passes'):.0f}). The busiest link was "
-        f"{names[top.passer]} → {names[top.recipient]} ({top.value:.0f}); counting both "
-        f"directions, that pair exchanged {pair:.0f} passes, "
-        f"{pair / stat(m.match, 'completed_passes'):.0%} of the team's total."
+        f"({hub.value:.0f} of {stat(m.match, 'completed_passes'):.0f}), and the busiest pair, "
+        f"{names[top.passer]} and {names[top.recipient]}, exchanged {pair:.0f} "
+        f"({pair / stat(m.match, 'completed_passes'):.0%})."
     )
-if len(matches) == 2:
-    a, b = matches["match"].tolist()
-    bullets.append(
-        f"**Dense, not hub-and-spoke.** Each player linked to about "
-        f"{stat(a, 'average_degree') / 2:.0f} team-mates in each direction in both matches "
-        f"(average degree {stat(a, 'average_degree'):.2f} and {stat(b, 'average_degree'):.2f}). "
-        "I read that as the ball moving through the whole side rather than through one "
-        "playmaker, though two matches are far too few to call it a team style."
-    )
-
-
-def same_flank_pair(match_id: int) -> tuple[str, str] | None:
-    """Labels of the busiest link if it joins a full-back and a midfielder on one side."""
-    mp = players[players["match"] == match_id].set_index("player")
-    ml = links[links["match"] == match_id]
-    if ml.empty:
-        return None
-    top = ml.loc[ml["value"].idxmax()]
-    pos = {mp.at[p, "position"] or "" for p in (top.passer, top.recipient) if p in mp.index}
-    for side in ("Left", "Right"):
-        if pos == {f"{side} Back", f"{side} Midfield"}:
-            return mp.at[top.passer, "label"], mp.at[top.recipient, "label"]
-    return None
-
-
-flanks = {m.title: same_flank_pair(m.match) for m in matches.itertuples()}
-if all(flanks.values()):
-    pairs = "; ".join(f"{a} and {b} ({t})" for t, (a, b) in flanks.items())
-    bullets.append(
-        f"**The flanks carried the ball.** In every match here the busiest link joined a "
-        f"full-back and the wide midfielder in front of him: {pairs}. I read that as Arsenal "
-        "building play down the touchlines, but this analysis only counts passes. It says "
-        "nothing about which passes created chances."
-    )
+bullets += [
+    f"**Specific, not just busy.** Given how many passes each player made and received, "
+    f"Arsenal's passing was more specific than chance in {ei_above} of {n_matches} matches "
+    f"(effective information above the random versions), with fewer distinct links "
+    f"({dens_below} matches) and more targeted individual passing ({ent_below} matches). "
+    f"Reciprocity, by contrast, was what chance predicts in {rec_within} matches. I read "
+    "this as players having preferred partners, without that meaning give-and-go play.",
+    f"**Eleven players, not four lines.** Merging players into roles lost information in "
+    f"{roles_neg:.0f} of {n_matches} matches, and merging into lines lost it in "
+    f"{lines_neg:.0f}. Pooling the whole season, which removes most small-sample bias, "
+    f"gives the same answer ({value('pooled_ce_roles'):+.2f} bits for roles). Roles were "
+    f"still the least-bad grouping: they beat the typical random grouping of the same sizes "
+    f"in {beats_random:.0f} matches. In Klein and Hoel's terms there is no causal emergence "
+    "at the positional scale.",
+    f"**Why roles lose more than chance would.** Grouping by role cost more information "
+    f"than it would in a volume-matched random team in {ce_below} of {n_matches} matches. "
+    "That is the flip side of the previous point: the information lives in who each "
+    "player passes to, and merging, say, the two centre-backs blurs two distinct passing "
+    "profiles into one. I think that is a real statement about this team, but it rests on "
+    "completed passes only. A possession chain that also includes shots and turnovers is the "
+    "natural next test.",
+]
 st.markdown("\n".join(f"- {b}" for b in bullets))
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)

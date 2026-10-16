@@ -156,11 +156,19 @@ ENTRIES: tuple[Entry, ...] = (
         type=EntryType.GRAPH,
         path="app_pages/network_science/football.py",
         summary=(
-            "Who passed to whom, and from where: directed passing networks of the Invincibles "
-            "in a 2-1 win over Chelsea and a 0-0 draw at Old Trafford, from StatsBomb event data."
+            "The Invincibles' 38 league matches as passing networks: who the ball flowed through, "
+            "which structure beats chance, and a Markov-chain test of whether the team is better "
+            "described by players or by positions."
         ),
         date=datetime.date(2026, 10, 16),
-        tags=("statsbomb", "football", "directed-graph", "weighted-graph"),
+        tags=(
+            "statsbomb",
+            "football",
+            "directed-graph",
+            "null-models",
+            "markov-chains",
+            "causal-emergence",
+        ),
         icon=":material/sports_soccer:",
     ),
     Entry(
