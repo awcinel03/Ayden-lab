@@ -2,10 +2,13 @@
 
 Run: python -m pipelines.experiments.network_science.wine_flavor [--allow-dirty]
 
-A faithful port of the original Colab notebook (Chapter 3 of "Conspiracies,
-Connectomes, and Cabernet"). Loads the two derived aggregates written by
-``pipelines.ingest.wine_flavor`` (term review counts and the co-occurrence edge
-list; no review text) from Storage, verifying both sha256s. Nodes come from the
+A port of the original Colab notebook (Chapter 3 of "Conspiracies, Connectomes,
+and Cabernet"). The headline analysis uses lexicon v2 (whole-token matching of
+accepted forms); lexicon v1 (the notebook's substring matching) is computed too,
+as ``v1_*`` metrics, for the page's comparison. Loads the derived aggregates
+written by ``pipelines.ingest.wine_flavor`` for both versions (term review counts
+and co-occurrence edge lists; no review text) from Storage, verifying every
+sha256. Nodes come from the
 terms table (every term found in a review, so a term whose pairs all fall below
 the weight threshold is an isolated node, as in the notebook) and edges from the
 edge table. Writes long-format results plus three small Parquet artifacts
@@ -31,7 +34,7 @@ from pipelines.common.provenance import git_sha, sha256_bytes
 from pipelines.common.runs import record_artifact, start_run, tracked, write_results
 from pipelines.common.storage import upload
 from pipelines.common.sync import sync_experiments
-from pipelines.ingest.wine_flavor import EDGES_SLUG, TERMS_SLUG
+from pipelines.ingest.wine_flavor import EDGES_SLUG, EDGES_V2_SLUG, TERMS_SLUG, TERMS_V2_SLUG
 from supabase import Client
 
 log = logging.getLogger(__name__)
@@ -39,8 +42,25 @@ log = logging.getLogger(__name__)
 EXPERIMENT_SLUG = "wine-flavor-network"
 ARTIFACT_BUCKET = "artifacts"
 CONFIG: dict[str, Any] = {
-    "version": 1,
-    "datasets": [TERMS_SLUG, EDGES_SLUG],
+    "version": 2,
+    "datasets": [TERMS_V2_SLUG, EDGES_V2_SLUG, TERMS_SLUG, EDGES_SLUG],
+    "lexicons": {
+        "v2": {
+            "role": "headline: every metric, artifact and takeaway",
+            "datasets": [TERMS_V2_SLUG, EDGES_V2_SLUG],
+            "matching": "whole \\w+ tokens of each term's accepted forms (lexicon v2)",
+        },
+        "v1": {
+            "role": "comparison only, stored as v1_* metrics",
+            "datasets": [TERMS_SLUG, EDGES_SLUG],
+            "matching": "substring of the lower-cased review (the notebook's, lexicon v1)",
+        },
+    },
+    "comparison": {
+        "metrics": "nodes, edges, degree, clustering, terms, top pairs, Louvain (seed 42), "
+        "community of every term, robustness at key steps",
+        "robustness_steps": [10, 25],
+    },
     "graph": (
         "undirected nx.Graph; nodes = terms table in row order (first appearance in the "
         "reviews, lexicon order within a review), attribute reviews; edges = edge table, "
@@ -119,6 +139,61 @@ def all_shortest_paths(g: nx.Graph) -> list[dict[str, Any]]:
     return out
 
 
+def community_ranks(partition: dict[str, int]) -> dict[str, int]:
+    """Relabel a partition by community size rank (1 = largest; ties keep first-seen order)."""
+    by_size = Counter(partition.values()).most_common()
+    rank_of = {c: r for r, (c, _) in enumerate(by_size, start=1)}
+    return {n: rank_of[c] for n, c in partition.items()}
+
+
+def compute_comparison(
+    terms: pd.DataFrame, edges: pd.DataFrame, config: dict[str, Any] = CONFIG
+) -> list[dict[str, Any]]:
+    """``v1_*`` result rows: the original (substring) network, summarised for comparison."""
+    rows: list[dict[str, Any]] = []
+
+    def add(metric: str, value: float, unit: str | None = None, **dims: Any) -> None:
+        row: dict[str, Any] = {"metric": f"v1_{metric}", "value": value, "unit": unit}
+        if dims:
+            row["dims"] = dims
+        rows.append(row)
+
+    g = build_graph(terms, edges)
+    n, m = g.number_of_nodes(), g.number_of_edges()
+    degrees = dict(g.degree())
+    add("nodes", n, "terms")
+    add("edges", m, "pairs")
+    add("avg_degree", 2 * m / n)
+    add("density", nx.density(g))
+    add("max_degree", max(degrees.values()))
+    add("isolated_nodes", nx.number_of_isolates(g), "terms")
+    add("avg_clustering", nx.average_clustering(g))
+    for term, reviews in nx.get_node_attributes(g, "reviews").items():
+        add("term_reviews", reviews, "reviews", term=term, degree=degrees[term])
+    top = sorted(g.edges(data="weight"), key=lambda e: e[2], reverse=True)[: config["top_pairs"]]
+    for rank, (a, b, w) in enumerate(top, start=1):
+        add("top_pair", w, "reviews", rank=rank, term_a=a, term_b=b)
+    comms = nm.louvain(g, seed=config["louvain"]["seed"])
+    add("communities", len(comms.sizes))
+    add("modularity", comms.modularity)
+    for rank, size in enumerate(comms.sizes, start=1):
+        add("community_size", size, "terms", rank=rank)
+    for term, rank in community_ranks(comms.partition).items():
+        add("term_community", rank, term=term)
+    rob = config["robustness"]
+    seed = rob["random_seeds"][0]
+    curves = {
+        ("targeted", None): nm.robustness_curve(g, strategy="targeted", steps=rob["steps"], seed=0),
+        ("random", seed): nm.robustness_curve(g, strategy="random", steps=rob["steps"], seed=seed),
+    }
+    for (strategy, s), curve in curves.items():
+        dims = {"strategy": strategy} | ({"seed": s} if s is not None else {})
+        for step in config["comparison"]["robustness_steps"]:
+            if step < len(curve):
+                add("giant_fraction", curve[step], "fraction", **dims, step=step)
+    return rows
+
+
 def compute(
     terms: pd.DataFrame, edges: pd.DataFrame, config: dict[str, Any] = CONFIG
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -148,6 +223,11 @@ def compute(
     top = sorted(g.edges(data="weight"), key=lambda e: e[2], reverse=True)[: config["top_pairs"]]
     for rank, (a, b, w) in enumerate(top, start=1):
         add("top_pair", w, "reviews", rank=rank, term_a=a, term_b=b)
+    # v2 terms tables also count reviews matched by only one of the two rules (all reviews).
+    for column in ("substring_only_reviews", "forms_only_reviews"):
+        if column in terms.columns:
+            for term, count in zip(terms["term"], terms[column], strict=True):
+                add(column, int(count), "reviews", term=str(term))
 
     counts = nm.degree_counts(g)
     for degree, count in enumerate(counts.tolist()):
@@ -193,8 +273,9 @@ def compute(
         add("sweep_second_community", s.sizes[1] if len(s.sizes) > 1 else 0, "terms", seed=seed)
 
     # Communities are relabelled by size rank (1 = largest) so labels are stable to read.
-    by_size = Counter(comms.partition.values()).most_common()
-    rank_of = {c: r for r, (c, _) in enumerate(by_size, start=1)}
+    ranks = community_ranks(comms.partition)
+    for term, rank in ranks.items():
+        add("term_community", rank, term=term)
     view_cfg = config["network_view"]
     pos = network_view(
         g, threshold=view_cfg["edge_weight_above"], k=view_cfg["k"], seed=view_cfg["seed"]
@@ -205,7 +286,7 @@ def compute(
             "term": t,
             "reviews": g.nodes[t]["reviews"],
             "degree": degrees[t],
-            "community": rank_of[comms.partition[t]],
+            "community": ranks[t],
             "x": float(pos[t][0]),
             "y": float(pos[t][1]),
         }
@@ -243,7 +324,7 @@ def run(client: Client, *, allow_dirty: bool = False) -> int | None:
     """Execute the experiment; returns the run id, or ``None`` if skipped."""
     experiment_id = sync_experiments(client)[EXPERIMENT_SLUG]
     datasets = {}
-    for slug in (TERMS_SLUG, EDGES_SLUG):
+    for slug in CONFIG["datasets"]:
         rows = (
             client.table("datasets")
             .select("id, sha256, storage_path")
@@ -264,9 +345,14 @@ def run(client: Client, *, allow_dirty: bool = False) -> int | None:
     if run_id is None:
         return None
     with tracked(client, run_id):
-        terms = pd.read_parquet(io.BytesIO(_download(client, datasets[TERMS_SLUG])))
-        edges = pd.read_parquet(io.BytesIO(_download(client, datasets[EDGES_SLUG])))
-        results, flavors, cooccurrence, paths = compute(terms, edges, CONFIG)
+        tables = {
+            slug: pd.read_parquet(io.BytesIO(_download(client, datasets[slug])))
+            for slug in CONFIG["datasets"]
+        }
+        results, flavors, cooccurrence, paths = compute(
+            tables[TERMS_V2_SLUG], tables[EDGES_V2_SLUG], CONFIG
+        )
+        results += compute_comparison(tables[TERMS_SLUG], tables[EDGES_SLUG], CONFIG)
         write_results(client, run_id, results)
         for name, records in (
             ("flavors", flavors),
