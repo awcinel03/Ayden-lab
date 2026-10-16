@@ -135,6 +135,21 @@ ENTRIES: tuple[Entry, ...] = (
         icon=":material/neurology:",
     ),
     Entry(
+        slug="wine-flavor-network",
+        title="Wine flavor network",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.EXPERIMENT,
+        path="app_pages/network_science/wine_flavor.py",
+        summary=(
+            "Which descriptors 130,000 professional tasting notes use together: a near-complete "
+            "co-occurrence network of 116 aroma-wheel terms with no critical hubs, robustness "
+            "that is simple subtraction, and communities that split red from white."
+        ),
+        date=datetime.date(2026, 10, 16),
+        tags=("kaggle", "text-network", "weighted-graph", "robustness", "louvain"),
+        icon=":material/wine_bar:",
+    ),
+    Entry(
         slug="arsenal-passing-networks",
         title="Arsenal passing networks, 2003/04",
         category=Category.NETWORK_SCIENCE,

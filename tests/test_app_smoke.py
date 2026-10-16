@@ -338,3 +338,60 @@ def test_football_logo_assets_exist():
     root = Path(__file__).resolve().parent.parent / "lab" / "assets"
     for theme in ("light", "dark"):
         assert (root / f"statsbomb-logo-{theme}.png").is_file()
+
+
+def _wine_fixtures():
+    from pipelines.experiments.network_science import wine_flavor as wx
+    from tests.test_pipelines_wine_flavor import SMALL, toy_tables
+
+    rows, flavors, cooccurrence, paths = wx.compute(*toy_tables(), SMALL)
+    results = pd.DataFrame([r | {"dims": r.get("dims", {})} for r in rows])
+    tables = {
+        "flavors.parquet": pd.DataFrame(flavors),
+        "cooccurrence.parquet": pd.DataFrame(cooccurrence),
+        "shortest_paths.parquet": pd.DataFrame(paths),
+    }
+    return results, tables
+
+
+@pytest.mark.parametrize("with_artifacts", [True, False])
+def test_wine_flavor_page_renders_results(monkeypatch, with_artifacts):
+    from lab import db, storage
+
+    run = db.Run(
+        id=4,
+        experiment_slug="wine-flavor-network",
+        started_at=datetime.datetime(2026, 10, 16, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    results, tables = _wine_fixtures()
+    arts = [db.Artifact("table", f"wine-flavor-network/4/{n}", 10, None) for n in tables]
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: results)
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+    monkeypatch.setattr(db, "artifacts", lambda run_id: arts if with_artifacts else [])
+    monkeypatch.setattr(
+        storage, "read_parquet", lambda a: tables[a.storage_path.rsplit("/", 1)[-1]]
+    )
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/wine_flavor.py").run()
+    assert not at.exception, at.exception
+    assert [m.value for m in at.metric][:2] == ["10", "15"]
+    assert any(h.value == "Takeaways" for h in at.header)
+    page_text = " ".join(m.value for m in at.markdown)
+    assert "brett (17 reviews)" in page_text
+    if with_artifacts:
+        assert not at.info
+        assert "I read this as the red/white divide" in page_text
+        # Isolated pair: the picker says there is no path.
+        at.selectbox[0].set_value("brett").run()
+        assert not at.exception, at.exception
+        assert any("No path" in m.value for m in at.markdown)
+        at.selectbox[0].set_value("lemon").run()
+        at.selectbox[1].set_value("plum").run()
+        assert any("**lemon** →" in m.value and "(4 hops)" in m.value for m in at.markdown)
+    else:
+        assert at.info  # empty states for the network and the path picker
