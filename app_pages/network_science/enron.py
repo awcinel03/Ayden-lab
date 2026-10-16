@@ -20,17 +20,17 @@ page_header(ENTRY)
 st.header("Purpose")
 st.write(
     "How did a large corporation organise its communication in the months before its 2001 "
-    "collapse, and what did that structure cost it? This entry applies one framework "
-    "(degree distribution, small-world properties, robustness to attack, community structure) "
-    "to the Enron email network. It is Chapter 1 of *Conspiracies, Connectomes, and Cabernet*, "
-    "a comparison of three real-world networks."
+    "collapse, and what did that structure cost it? Here I apply one framework (degree "
+    "distribution, small-world properties, robustness to attack, community structure) to the "
+    "Enron email network. It is Chapter 1 of my write-up *Conspiracies, Connectomes, and "
+    "Cabernet*, a comparison of three real-world networks."
 )
 
 st.header("Method")
 st.markdown(
     "- **Data:** SNAP's *email-Enron* graph. Nodes are email addresses (anonymised integers); "
     "an edge means at least one email was exchanged. **SNAP collapsed email direction into "
-    "undirected edges**, so we know two addresses corresponded but not who wrote first.\n"
+    "undirected edges**, so I know two addresses corresponded but not who wrote first.\n"
     "- **Degree distribution:** histogram of node degrees, then a least-squares line through "
     "log₁₀(count) vs log₁₀(degree), keeping only degrees seen more than once "
     "(singleton-filtered).\n"
@@ -261,7 +261,7 @@ if all(len(v) for v in sweep.values()):
         f"{sweep['communities'].min():.0f}–{sweep['communities'].max():.0f} communities, "
         f"modularity {sweep['modularity'].min():.3f}–{sweep['modularity'].max():.3f}, "
         f"{sweep['within_fraction'].min():.1%}–{sweep['within_fraction'].max():.1%} of edges "
-        "within communities. The published run (190 communities, modularity 0.608, 73.3%) "
+        "within communities. My original, unseeded run (190 communities, modularity 0.608, 73.3%) "
         "falls inside this spread."
     )
 
@@ -359,8 +359,8 @@ st.markdown(
     f"- **Scale-free, built around hubs.** Degrees follow a power law (slope "
     f"{value('power_law_slope'):.2f}, R² {value('power_law_r2'):.3f}). The busiest address has "
     f"degree {value('max_degree'):,.0f}, about {value('max_degree') / mean_deg:.0f}× the mean "
-    f"of {mean_deg:.2f}. These hubs are probably executive assistants, shared inboxes or "
-    "coordinators (an interpretation: the IDs are anonymised), and the pattern is what "
+    f"of {mean_deg:.2f}. I read these hubs as executive assistants, shared inboxes or "
+    "coordinators (the IDs are anonymised, so I can't confirm roles), and the pattern is what "
     "preferential attachment produces.\n"
     f"- **A small world.** Any two addresses in the giant component are about "
     f"{value('avg_path_sampled'):.1f} hops apart, yet clustering is "
@@ -372,9 +372,9 @@ st.markdown(
     f"shrinks it by {1 - t_last:.0%}; the same number of random removals barely registers.\n"
     f"- **The org chart, recovered.** Louvain finds {value('communities'):,.0f} communities "
     f"(modularity {value('modularity'):.3f}), and {value('within_fraction'):.0%} of edges stay "
-    "inside them. The author's reading: this siloing put real structural barriers in the way "
-    "of information, which may have helped contain knowledge of the fraud, even though a "
-    "short path connected everyone in principle."
+    "inside them. My reading: this siloing put real structural barriers in the way of "
+    "information, which may have helped contain knowledge of the fraud, even though a short "
+    "path connected everyone in principle."
 )
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
