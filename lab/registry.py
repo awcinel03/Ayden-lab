@@ -148,6 +148,21 @@ ENTRIES: tuple[Entry, ...] = (
         tags=("statsbomb", "football", "directed-graph", "weighted-graph"),
         icon=":material/sports_soccer:",
     ),
+    Entry(
+        slug="coral-heat-stress-forecast",
+        title="Forecasting Great Barrier Reef heat stress",
+        category=Category.MACHINE_LEARNING,
+        type=EntryType.MODEL,
+        path="app_pages/machine_learning/coral_forecast.py",
+        summary=(
+            "A Random Forest that predicts Degree Heating Weeks 28 days ahead from NOAA Coral "
+            "Reef Watch satellite data: well ahead of the baselines, but it warns of bleaching "
+            "about two weeks late, and the rate-of-change features barely fix that."
+        ),
+        date=datetime.date(2026, 10, 16),
+        tags=("noaa", "random-forest", "forecasting", "time-series", "coral-reefs"),
+        icon=":material/waves:",
+    ),
 )
 
 

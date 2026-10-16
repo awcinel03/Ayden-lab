@@ -338,3 +338,73 @@ def test_football_logo_assets_exist():
     root = Path(__file__).resolve().parent.parent / "lab" / "assets"
     for theme in ("light", "dark"):
         assert (root / f"statsbomb-logo-{theme}.png").is_file()
+
+
+def test_coral_page_renders_results(monkeypatch):
+    from lab import db, storage
+
+    run = db.Run(
+        id=5,
+        experiment_slug="coral-heat-stress-forecast",
+        started_at=datetime.datetime(2026, 10, 16, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    scalars = {
+        "rmse": 1.2, "mae": 0.6, "r2": 0.83, "skill_vs_persistence": 0.37, "mean_late_days": 14.7,
+        "n_train": 100, "n_test": 50, "embargoed_rows": 5, "grid_cells": 2,
+        "rmse_baseline_mean": 3.1, "rmse_baseline_persistence": 1.9, "best_shift_days": -8,
+        "rmse_at_best_shift": 0.6, "rmse_unshifted": 0.7,
+    }  # fmt: skip
+    rows = [{"metric": k, "value": v, "unit": None, "dims": {}} for k, v in scalars.items()]
+    rows += [{"metric": "feature_importance", "value": v, "unit": None, "dims": {"feature": f}}
+             for f, v in (("dhw_lag0", 0.6), ("dhw_accel7", 0.2))]  # fmt: skip
+    for fs, n, late in (("sst_ssta", 8, None), ("lags", 12, 16.0), ("full", 15, 14.7)):
+        for m, v in (
+            ("n_features", n),
+            ("rmse", 1.2),
+            ("r2", 0.8),
+            ("skill_vs_persistence", 0.3),
+            ("best_shift", -8),
+            ("mean_late", late),
+        ):
+            rows.append({"metric": f"ablation_{m}", "value": v, "unit": None,
+                         "dims": {"feature_set": fs}})  # fmt: skip
+    rows += [{"metric": "shift_rmse", "value": 1 + abs(s) / 10, "unit": None,
+              "dims": {"shift": s}} for s in range(-2, 3)]  # fmt: skip
+    rows += [
+        {"metric": "crossing_late_days", "value": 17.0, "unit": None,
+         "dims": {"year": 2020, "actual": "2020-02-21", "predicted": "2020-03-09"}},
+        {"metric": "crossing_late_days", "value": None, "unit": None,
+         "dims": {"year": 2023, "actual": None, "predicted": "2023-01-12"}},
+    ]  # fmt: skip
+    days = pd.to_datetime(["2020-02-01", "2020-02-02"])
+    tables = {
+        "daily.parquet": pd.DataFrame(
+            {"target_date": days, "actual": [3.0, 5.0], "predicted": [2.0, 4.5],
+             "persistence": [1.0, 3.0]}
+        ),
+        "cells.parquet": pd.DataFrame(
+            {"target_date": days.repeat(2), "latitude": [-10.0, -11.0] * 2,
+             "longitude": [142.0, 143.0] * 2, "actual": [0.5, 9.0, 2.0, 5.0],
+             "predicted": [-0.1, 8.5, 2.0, 5.0]}
+        ),
+    }  # fmt: skip
+    arts = [db.Artifact("table", f"coral-heat-stress-forecast/5/{n}", 10, None) for n in tables]
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+    monkeypatch.setattr(db, "artifacts", lambda run_id: arts)
+    monkeypatch.setattr(
+        storage, "read_parquet", lambda a: tables[a.storage_path.rsplit("/", 1)[-1]].copy()
+    )
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/machine_learning/coral_forecast.py").run()
+    assert not at.exception, at.exception
+    assert at.metric[0].value == "1.200 °C-wk"
+    assert not at.info  # every artifact rendered
+    assert any("late every time" in m.value for m in at.markdown)
+    at.select_slider(key="map_date").set_value(days[0].date()).run()
+    assert not at.exception, at.exception
