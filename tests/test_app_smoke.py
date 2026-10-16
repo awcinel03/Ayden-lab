@@ -332,3 +332,9 @@ def test_football_page_renders_results(monkeypatch):
     assert "flanks" in at.markdown[-1].value or any("flanks" in m.value for m in at.markdown)
     at.slider(key="min_passes").set_value(1).run()
     assert not at.exception, at.exception
+
+
+def test_football_logo_assets_exist():
+    root = Path(__file__).resolve().parent.parent / "lab" / "assets"
+    for theme in ("light", "dark"):
+        assert (root / f"statsbomb-logo-{theme}.png").is_file()

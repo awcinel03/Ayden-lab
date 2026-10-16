@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,6 +17,8 @@ CODE_PATHS = (
 BLUE = "#2a78d6"  # categorical slot 1 (validated palette)
 PITCH, LINES = "#2d8c3c", "rgba(255, 255, 255, 0.85)"  # the pitch is a surface, not data
 LENGTH, WIDTH = 120, 80  # StatsBomb pitch coordinates; y runs top to bottom
+# StatsBomb's licence requires its logo on any published analysis of the data.
+ASSETS = Path(__file__).resolve().parents[2] / "lab" / "assets"
 
 page_header(ENTRY)
 
@@ -323,4 +326,6 @@ if all(flanks.values()):
 st.markdown("\n".join(f"- {b}" for b in bullets))
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
+theme = "dark" if st.context.theme.type == "dark" else "light"
+st.image(ASSETS / f"statsbomb-logo-{theme}.png", width=220)
 st.caption("Data: StatsBomb open data. Analysis and opinions are my own, not StatsBomb's.")
