@@ -5,3 +5,4 @@ networkx==3.7
 numpy==2.5.3
 scipy==1.18.1
 python-louvain==0.16
+scikit-learn==1.9.1
