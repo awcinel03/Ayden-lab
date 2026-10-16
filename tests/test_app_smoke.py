@@ -282,3 +282,53 @@ def test_c_elegans_page_renders_results(monkeypatch):
     assert [m.value for m in at.metric][:2] == ["3", "4"]
     assert any(h.value == "Takeaways" for h in at.header)
     assert not at.info  # neuron map rendered, no empty state
+
+
+def test_football_page_renders_results(monkeypatch):
+    from lab import db
+
+    run = db.Run(
+        id=4,
+        experiment_slug="arsenal-passing-networks",
+        started_at=datetime.datetime(2026, 10, 16, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    rows = [
+        {"metric": "match_info", "value": m, "unit": None,
+         "dims": {"match": m, "date": "2003-10-18", "home": "Arsenal", "away": "Chelsea",
+                  "home_score": 2, "away_score": 1}}
+        for m in (1, 2)
+    ]  # fmt: skip
+    rows += [
+        {"metric": k, "value": v, "unit": None, "dims": {"match": m}}
+        for m in (1, 2)
+        for k, v in (("completed_passes", 7), ("players", 2), ("connections", 2),
+                     ("average_degree", 2.0))
+    ]  # fmt: skip
+    rows += [
+        {"metric": "passes_made", "value": n, "unit": None,
+         "dims": {"match": m, "player": p, "label": p, "position": pos, "x": x, "y": 10.0,
+                  "received": 7 - n}}
+        for m in (1, 2)
+        for p, pos, n, x in (("Cole", "Left Back", 4, 40.0), ("Pires", "Left Midfield", 3, 70.0))
+    ]  # fmt: skip
+    rows += [
+        {"metric": "pass_link", "value": n, "unit": None,
+         "dims": {"match": m, "passer": a, "recipient": b}}
+        for m in (1, 2)
+        for a, b, n in (("Cole", "Pires", 4), ("Pires", "Cole", 3))
+    ]  # fmt: skip
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/football.py").run()
+    assert not at.exception, at.exception
+    assert at.metric[0].value == "7"
+    assert any(h.value == "Takeaways" for h in at.header)
+    assert "flanks" in at.markdown[-1].value or any("flanks" in m.value for m in at.markdown)
+    at.slider(key="min_passes").set_value(1).run()
+    assert not at.exception, at.exception

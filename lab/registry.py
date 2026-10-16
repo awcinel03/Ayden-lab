@@ -134,6 +134,20 @@ ENTRIES: tuple[Entry, ...] = (
         tags=("snap", "directed-graph", "connectome", "robustness", "louvain"),
         icon=":material/neurology:",
     ),
+    Entry(
+        slug="arsenal-passing-networks",
+        title="Arsenal passing networks, 2003/04",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.GRAPH,
+        path="app_pages/network_science/football.py",
+        summary=(
+            "Who passed to whom, and from where: directed passing networks of the Invincibles "
+            "in a 2-1 win over Chelsea and a 0-0 draw at Old Trafford, from StatsBomb event data."
+        ),
+        date=datetime.date(2026, 10, 16),
+        tags=("statsbomb", "football", "directed-graph", "weighted-graph"),
+        icon=":material/sports_soccer:",
+    ),
 )
 
 
