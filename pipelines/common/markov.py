@@ -58,16 +58,17 @@ def effectiveness(w: np.ndarray) -> float:
 def macro_matrix(w: np.ndarray, partition: Partition, weights: np.ndarray) -> np.ndarray:
     """Macro-scale transition matrix for ``partition`` (groups of node indices).
 
-    Row mu is the ``weights``-weighted average of its members' rows, summed over
-    each target group's columns; flows inside a group become self-loops.
+    Row mu is the ``weights``-weighted average of its members' rows (uniform if
+    the group's weights are all zero), summed over each target group's columns;
+    flows inside a group become self-loops.
     """
     k = len(partition)
     out = np.zeros((k, k))
     for a, group in enumerate(partition):
         g = list(group)
         wts = weights[g]
-        if wts.sum() <= 0:
-            continue
+        if wts.sum() <= 0:  # e.g. end states that never pass: average members uniformly
+            wts = np.ones(len(g))
         row = (wts[:, None] * w[g]).sum(axis=0) / wts.sum()
         for b, target in enumerate(partition):
             out[a, b] = row[list(target)].sum()
@@ -79,13 +80,31 @@ def causal_emergence(w: np.ndarray, partition: Partition, weights: np.ndarray) -
     return effective_information(macro_matrix(w, partition, weights)) - effective_information(w)
 
 
-def greedy_partition(w: np.ndarray, weights: np.ndarray) -> tuple[list[list[int]], float]:
+def with_end_states(w: np.ndarray, ends: Sequence[int], *, absorbing: bool = True) -> np.ndarray:
+    """Copy of ``w`` with the ``ends`` rows made absorbing (self-loop 1) or empty (sinks).
+
+    Absorbing end states are deterministic, so they add to EI; as sinks they
+    have no outputs and are left out of the intervention distribution.
+    """
+    out = np.array(w, dtype=float)
+    for i in ends:
+        out[i] = 0.0
+        if absorbing:
+            out[i, i] = 1.0
+    return out
+
+
+def greedy_partition(
+    w: np.ndarray, weights: np.ndarray, mergeable: Sequence[int] | None = None
+) -> tuple[list[list[int]], float]:
     """Agglomerative search for a high-EI partition.
 
     From singletons, repeatedly merge the pair of groups whose merge gives the
-    highest macro EI, and return the best partition seen with its EI. Greedy,
-    so a lower bound on the best possible macro EI.
+    highest macro EI, and return the best partition seen with its EI. Only
+    groups made of ``mergeable`` nodes (default: all) may merge. Greedy, so a
+    lower bound on the best possible macro EI.
     """
+    allowed = set(range(len(w))) if mergeable is None else set(mergeable)
     groups = [[i] for i in range(len(w))]
     best_groups = [list(g) for g in groups]
     best_ei = effective_information(macro_matrix(w, groups, weights))
@@ -93,9 +112,13 @@ def greedy_partition(w: np.ndarray, weights: np.ndarray) -> tuple[list[list[int]
         candidates = []
         for a in range(len(groups)):
             for b in range(a + 1, len(groups)):
+                if not allowed.issuperset(groups[a] + groups[b]):
+                    continue
                 merged = [g for i, g in enumerate(groups) if i not in (a, b)]
                 merged.append(groups[a] + groups[b])
                 candidates.append((effective_information(macro_matrix(w, merged, weights)), merged))
+        if not candidates:
+            break
         ei, groups = max(candidates, key=lambda c: c[0])
         if ei > best_ei + 1e-12:
             best_ei, best_groups = ei, [sorted(g) for g in groups]
