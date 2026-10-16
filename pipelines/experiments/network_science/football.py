@@ -12,6 +12,7 @@ stored in results, only the derived network.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import logging
 from collections import Counter, defaultdict
@@ -173,7 +174,7 @@ def compute(
 
 def _download(client: Client, dataset: dict[str, Any]) -> Any:
     bucket, path = dataset["storage_path"].split("/", 1)
-    data = client.storage.from_(bucket).download(path)
+    data = gzip.decompress(client.storage.from_(bucket).download(path))
     if sha256_bytes(data) != dataset["sha256"]:
         raise RuntimeError(f"{path} does not match its recorded sha256")
     return json.loads(data)

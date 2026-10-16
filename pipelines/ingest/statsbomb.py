@@ -4,9 +4,11 @@ Run: python -m pipelines.ingest.statsbomb pl-2003-04-matches
      python -m pipelines.ingest.statsbomb --all
 
 Idempotent: if a downloaded file's sha256 matches the recorded row and the
-object exists in Storage, nothing is written. Files are mirrored to the private
-``datasets`` bucket only; the StatsBomb Public Data User Agreement forbids
-redistributing the data, so the app never reads them (it shows derived results).
+object exists in Storage, nothing is written. Files are stored gzipped (the
+bucket does not accept JSON); the recorded sha256 is of the original JSON.
+Files are mirrored to the private ``datasets`` bucket only; the StatsBomb Public
+Data User Agreement forbids redistributing the data, so the app never reads them
+(it shows derived results).
 One request per file, with a descriptive User-Agent.
 """
 
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import gzip
 import json
 import logging
 from collections.abc import Callable
@@ -95,11 +98,12 @@ def ingest(
     """
     data = fetch(source.url)
     sha = sha256_bytes(data)
-    path = f"statsbomb/{source.path}"
+    path = f"statsbomb/{source.path}.gz"
     rows = client.table("datasets").select("sha256").eq("slug", source.slug).execute().data
     if rows and rows[0]["sha256"] == sha and client.storage.from_(BUCKET).exists(path):
         return "unchanged"
-    upload(client, BUCKET, path, data, "application/json")
+    blob = gzip.compress(data, mtime=0)
+    upload(client, BUCKET, path, blob, "application/gzip")
     client.table("datasets").upsert(
         {
             "slug": source.slug,
@@ -109,8 +113,8 @@ def ingest(
             "license": LICENSE,
             "citation": CITATION,
             "storage_path": f"{BUCKET}/{path}",
-            "format": "json",
-            "bytes": len(data),
+            "format": "json.gz",
+            "bytes": len(blob),
             "sha256": sha,
             "row_count": count_records(data),
             "retrieved_at": datetime.datetime.now(datetime.UTC).isoformat(),

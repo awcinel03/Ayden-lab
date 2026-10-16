@@ -1,5 +1,6 @@
 """StatsBomb ingester and Arsenal passing-network experiment, with Supabase mocked."""
 
+import gzip
 import json
 from unittest.mock import MagicMock
 
@@ -124,13 +125,40 @@ def test_ingest_skips_unchanged_file():
 def test_ingest_records_licence_and_counts_records():
     client, datasets = mock_client()
     assert statsbomb.ingest(client, SOURCE, fetch=lambda url: BLOB) == "updated"
-    assert client.storage.from_.return_value.upload.call_args.args[0] == (
-        "statsbomb/matches/2/44.json"
-    )
+    path, blob = client.storage.from_.return_value.upload.call_args.args[:2]
+    assert path == "statsbomb/matches/2/44.json.gz" and gzip.decompress(blob) == BLOB
     row = datasets.upsert.call_args.args[0]
     assert row["row_count"] == 1 and "logo" in row["license"]
+    assert row["sha256"] == statsbomb.sha256_bytes(BLOB) and row["bytes"] == len(blob)
     assert SOURCE.url.endswith("/data/matches/2/44.json")
 
 
 def test_every_configured_dataset_has_a_source():
     assert set(fb.CONFIG["datasets"]) == {s.slug for s in statsbomb.SOURCES.values()}
+
+
+def test_run_verifies_sha_of_decompressed_json(monkeypatch):
+    client = MagicMock()
+    raw = json.dumps(MATCHES).encode()
+    rows = {
+        slug: {"id": i, "sha256": fb.sha256_bytes(raw), "storage_path": f"datasets/{slug}.gz"}
+        for i, slug in enumerate(fb.CONFIG["datasets"])
+    }
+    eq = client.table.return_value.select.return_value.eq
+    eq.side_effect = lambda col, slug: MagicMock(**{"execute.return_value.data": [rows[slug]]})
+    client.storage.from_.return_value.download.return_value = gzip.compress(raw)
+    monkeypatch.setattr(fb, "sync_experiments", lambda c: {fb.EXPERIMENT_SLUG: 7})
+    monkeypatch.setattr(fb, "git_sha", lambda allow_dirty: "abc")
+    monkeypatch.setattr(fb, "start_run", lambda c, **kw: 11)
+    monkeypatch.setattr(fb, "tracked", lambda c, run_id: MagicMock())
+    computed = {}
+    monkeypatch.setattr(fb, "compute", lambda m, e, lu, cfg: computed.update(m=m) or [])
+    monkeypatch.setattr(fb, "write_results", lambda c, run_id, r: None)
+    assert fb.run(client) == 11 and computed["m"] == MATCHES
+    client.storage.from_.return_value.download.return_value = gzip.compress(b"[]")
+    try:
+        fb.run(client)
+    except RuntimeError as e:
+        assert "sha256" in str(e)
+    else:
+        raise AssertionError("tampered file accepted")
