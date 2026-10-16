@@ -1,11 +1,23 @@
 """StatsBomb ingester and Arsenal passing-network experiment, with Supabase mocked."""
 
 import gzip
+import io
 import json
+import random
+import tarfile
 from unittest.mock import MagicMock
+
+import numpy as np
 
 from pipelines.experiments.network_science import football as fb
 from pipelines.ingest import statsbomb
+
+XI = [
+    ("A", "Goalkeeper"),
+    ("B", "Left Back"),
+    ("C", "Left Center Back"),
+    ("D", "Right Center Back"),
+]
 
 
 def ev(player, recipient=None, *, team="Arsenal", kind="Pass", outcome=None, pos="Left Back"):
@@ -25,17 +37,34 @@ def ev(player, recipient=None, *, team="Arsenal", kind="Pass", outcome=None, pos
     }
 
 
-EVENTS = [
-    ev("A", "B"),
-    ev("A", "B"),
-    ev("B", "A", pos="Left Midfield"),
-    ev("A", "C"),
-    ev("C"),  # completed, no recipient: counts as a pass, no edge
-    ev("A", "B", outcome="Incomplete"),
-    ev("X", "Y", team="Chelsea"),
-    ev("A", "B", kind="Carry"),
-    ev("A", "B", pos="Left Midfield"),  # A's minority position
-]
+def numbered(events, minute_every=10):
+    """Give events StatsBomb's ``index`` and ``minute`` fields, in order."""
+    return [e | {"index": i + 1, "minute": i // minute_every} for i, e in enumerate(events)]
+
+
+def starting_xi(team="Arsenal", xi=XI):
+    lineup = [{"player": {"name": n}, "position": {"name": p}} for n, p in xi]
+    return {"type": {"name": "Starting XI"}, "team": {"name": team}, "tactics": {"lineup": lineup}}
+
+
+EVENTS = numbered(
+    [
+        starting_xi(),
+        ev("A", "B"),
+        ev("A", "B"),
+        ev("B", "A", pos="Left Midfield"),
+        ev("A", "C"),
+        ev("C"),  # completed, no recipient: counts as a pass, no edge
+        ev("A", "B", outcome="Incomplete"),
+        ev("X", "Y", team="Chelsea"),
+        ev("A", "B", kind="Carry"),
+        ev("A", "B", pos="Left Midfield"),  # A's minority position
+        ev("C", "D"),
+        ev("D", "C"),
+        {"type": {"name": "Substitution"}, "team": {"name": "Arsenal"}, "player": {"name": "D"}},
+        ev("B", "C"),  # after the first substitution: full match only
+    ]
+)
 LINEUPS = [
     {
         "team_name": "Arsenal",
@@ -56,11 +85,17 @@ MATCHES = [
         "away_score": 1,
     }
 ]
-SMALL = fb.CONFIG | {"matches": [1]}
+SMALL = fb.CONFIG | {
+    "featured_matches": [1],
+    "bootstrap": fb.CONFIG["bootstrap"] | {"reps": 20},
+    "null": fb.CONFIG["null"] | {"reps": 20},
+    "random_partitions": fb.CONFIG["random_partitions"] | {"reps": 20},
+    "season_tests": {"permutations": 20, "seed": 0},
+}
 
 
 def test_completed_passes_filters_team_type_and_outcome():
-    assert len(fb.completed_passes(EVENTS, "Arsenal")) == 6
+    assert len(fb.completed_passes(EVENTS, "Arsenal")) == 9
 
 
 def test_network_weights_and_skips_missing_recipient():
@@ -69,6 +104,9 @@ def test_network_weights_and_skips_missing_recipient():
         ("A", "B"): 3,
         ("B", "A"): 1,
         ("A", "C"): 1,
+        ("C", "D"): 1,
+        ("D", "C"): 1,
+        ("B", "C"): 1,
     }
 
 
@@ -86,16 +124,71 @@ def test_labels_prefer_nickname_for_the_team_only():
     assert fb.labels(LINEUPS, "Arsenal") == {"A": "Aye", "B": "B"}
 
 
+def test_roles_and_lines():
+    assert [fb.role_of(p) for _, p in XI] == ["GK", "L-DEF", "C-DEF", "C-DEF"]
+    assert fb.role_of("Right Midfield") == "R-MID" and fb.role_of("Center Forward") == "C-ATT"
+    assert fb.line_of("Left Wing") == "ATT" and fb.line_of("Right Wing Back") == "DEF"
+    assert fb.line_of("Center Defensive Midfield") == "MID"
+
+
+def test_window_stops_at_first_substitution():
+    names, positions, counts, minutes = fb.window_counts(EVENTS, "Arsenal")
+    assert names == ["A", "B", "C", "D"] and positions[0] == "Goalkeeper"
+    assert counts.sum() == 7  # B -> C after the substitution is excluded
+    assert counts[0, 1] == 3 and counts[2, 3] == 1 and counts[1, 2] == 0
+    assert minutes == 1
+
+
+def test_window_stops_at_red_card_but_not_yellow():
+    yellow = {"type": {"name": "Foul Committed"}, "team": {"name": "Arsenal"},
+              "foul_committed": {"card": {"name": "Yellow Card"}}}  # fmt: skip
+    red = yellow | {"foul_committed": {"card": {"name": "Second Yellow"}}}
+    events = numbered([starting_xi(), ev("A", "B"), yellow, ev("A", "B"), red, ev("A", "B")])
+    assert fb.window_counts(events, "Arsenal")[2].sum() == 2
+
+
+def test_window_stats_on_a_known_matrix():
+    counts = np.array([[0, 2, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
+    s = fb.window_stats(counts, minutes=2, roles=["GK", "L-DEF", "C-DEF", "C-DEF"],
+                        lines=["GK", "DEF", "DEF", "DEF"])  # fmt: skip
+    assert s["passes"] == 6 and s["intensity"] == 3
+    assert s["density"] == 5 / 12
+    assert s["reciprocity"] == 4 / 6 and s["top_pair_share"] == 3 / 6  # pairs A-B, C-D
+    # involvement s = [3, 4, 3, 2]; sum(4 - s_i) = 1 + 0 + 1 + 2 = 4; (n - 2) P = 12
+    assert s["centralization"] == 4 / 12
+    assert np.isclose(s["mean_entropy"], 1 / 4)  # only B splits its passes (1 bit)
+
+
+def test_resample_keeps_pass_total_and_support():
+    counts = np.array([[0, 5], [3, 0]])
+    out = fb.resample_counts(counts, random.Random(0))
+    assert out.sum() == 8 and out[0, 0] == 0 and out[1, 1] == 0
+
+
+def test_permutation_spearman_detects_monotone_relation():
+    x = np.arange(12.0)
+    rho, p = fb.permutation_spearman(x, x**2, 200, random.Random(0))
+    assert rho == 1.0 and p < 0.05
+
+
 def test_compute_rows():
     rows = fb.compute(MATCHES, {1: EVENTS}, {1: LINEUPS}, SMALL)
     s = {r["metric"]: r["value"] for r in rows if set(r["dims"]) == {"match"}}
-    assert s["completed_passes"] == 6 and s["players"] == 3 and s["connections"] == 3
-    assert s["average_degree"] == 2.0
+    assert s["completed_passes"] == 9 and s["players"] == 4 and s["connections"] == 6
+    assert s["w_passes"] == 7 and s["window_minutes"] == 1
+    for stat in fb.WINDOW_STATS:
+        assert f"w_{stat}_lo" in s and f"w_{stat}_bias" in s
+    for stat in fb.NULL_STATS:
+        assert 0 <= s[f"w_{stat}_null_pct"] <= 1
     info = next(r for r in rows if r["metric"] == "match_info")
-    assert info["dims"]["home_score"] == 2 and info["dims"]["away"] == "Chelsea"
+    assert info["dims"]["result"] == "W" and info["dims"]["opponent"] == "Chelsea"
     made = {r["dims"]["player"]: r for r in rows if r["metric"] == "passes_made"}
     assert made["A"]["value"] == 4 and made["A"]["dims"]["label"] == "Aye"
-    assert made["B"]["dims"]["received"] == 3 and made["C"]["value"] == 1
+    window = {r["dims"]["player"]: r for r in rows if r["metric"] == "window_player"}
+    assert window["C"]["dims"]["role"] == "C-DEF" and window["A"]["value"] == 4
+    assert any(r["metric"] == "role_transition" for r in rows)
+    pooled = {r["metric"]: r["value"] for r in rows if not r["dims"]}
+    assert pooled["pooled_passes"] == 7 and pooled["season_matches"] == 1
     keys = [(r["metric"], json.dumps(r["dims"], sort_keys=True)) for r in rows]
     assert len(keys) == len(set(keys))
 
@@ -133,29 +226,69 @@ def test_ingest_records_licence_and_counts_records():
     assert SOURCE.url.endswith("/data/matches/2/44.json")
 
 
-def test_every_configured_dataset_has_a_source():
-    assert set(fb.CONFIG["datasets"]) == {s.slug for s in statsbomb.SOURCES.values()}
+def test_tar_bundle_is_deterministic_and_round_trips():
+    files = {"events/2.json": b"[2]", "events/1.json": b"[1, 1]"}
+    tar = statsbomb.tar_bundle(files)
+    assert tar == statsbomb.tar_bundle(dict(reversed(list(files.items()))))
+    assert statsbomb.read_bundle(tar) == files
+    with tarfile.open(fileobj=io.BytesIO(tar)) as t:
+        assert [m.name for m in t.getmembers()] == ["events/1.json", "events/2.json"]
+        assert {m.mtime for m in t.getmembers()} == {0}
 
 
-def test_run_verifies_sha_of_decompressed_json(monkeypatch):
+def test_ingest_season_bundles_cached_files(tmp_path):
+    fetched = []
+
+    def fetch(url):
+        fetched.append(url)
+        return b"[" + url.rsplit("/", 1)[1].split(".")[0].encode() + b"]"
+
+    client, datasets = mock_client()
+    assert statsbomb.ingest_season(client, "lineups", [2, 1], fetch, tmp_path) == "updated"
+    path, blob = client.storage.from_.return_value.upload.call_args.args[:2]
+    row = datasets.upsert.call_args.args[0]
+    assert path == "statsbomb/statsbomb-pl-2003-04-lineups.tar.gz"
+    assert row["sha256"] == statsbomb.sha256_bytes(gzip.decompress(blob))
+    assert row["row_count"] == 2 and row["slug"] == statsbomb.season_slug("lineups")
+    assert len(fetched) == 2
+    statsbomb.ingest_season(client, "lineups", [2, 1], fetch, tmp_path)
+    assert len(fetched) == 2  # second pass served from the cache
+
+
+def test_every_configured_dataset_is_produced_by_the_ingester():
+    produced = {statsbomb.SOURCES[statsbomb.SEASON_MATCHES].slug} | {
+        statsbomb.season_slug(k) for k in ("events", "lineups")
+    }
+    assert set(fb.CONFIG["datasets"]) == produced
+
+
+def test_run_verifies_sha_of_every_bundle(monkeypatch):
     client = MagicMock()
-    raw = json.dumps(MATCHES).encode()
+    matches = json.dumps(MATCHES).encode()
+    bundles = {
+        fb.MATCHES_SLUG: matches,
+        statsbomb.season_slug("events"): statsbomb.tar_bundle({"events/1.json": b"[]"}),
+        statsbomb.season_slug("lineups"): statsbomb.tar_bundle({"lineups/1.json": b"[]"}),
+    }
     rows = {
-        slug: {"id": i, "sha256": fb.sha256_bytes(raw), "storage_path": f"datasets/{slug}.gz"}
-        for i, slug in enumerate(fb.CONFIG["datasets"])
+        slug: {"id": i, "sha256": fb.sha256_bytes(data), "storage_path": f"datasets/{slug}.gz"}
+        for i, (slug, data) in enumerate(bundles.items())
     }
     eq = client.table.return_value.select.return_value.eq
     eq.side_effect = lambda col, slug: MagicMock(**{"execute.return_value.data": [rows[slug]]})
-    client.storage.from_.return_value.download.return_value = gzip.compress(raw)
+    client.storage.from_.return_value.download.side_effect = lambda path: gzip.compress(
+        bundles[path.removesuffix(".gz")]
+    )
     monkeypatch.setattr(fb, "sync_experiments", lambda c: {fb.EXPERIMENT_SLUG: 7})
     monkeypatch.setattr(fb, "git_sha", lambda allow_dirty: "abc")
     monkeypatch.setattr(fb, "start_run", lambda c, **kw: 11)
     monkeypatch.setattr(fb, "tracked", lambda c, run_id: MagicMock())
-    computed = {}
-    monkeypatch.setattr(fb, "compute", lambda m, e, lu, cfg: computed.update(m=m) or [])
+    seen = {}
+    monkeypatch.setattr(fb, "compute", lambda m, e, lu, cfg: seen.update(m=m, e=e, lu=lu) or [])
     monkeypatch.setattr(fb, "write_results", lambda c, run_id, r: None)
-    assert fb.run(client) == 11 and computed["m"] == MATCHES
-    client.storage.from_.return_value.download.return_value = gzip.compress(b"[]")
+    assert fb.run(client) == 11
+    assert seen == {"m": MATCHES, "e": {1: []}, "lu": {1: []}}
+    rows[fb.MATCHES_SLUG]["sha256"] = "0" * 64
     try:
         fb.run(client)
     except RuntimeError as e:
