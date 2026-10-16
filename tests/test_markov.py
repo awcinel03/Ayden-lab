@@ -67,3 +67,26 @@ def test_configuration_keeps_totals_and_avoids_self_loops():
 
 def test_labels_to_partition_groups_in_first_seen_order():
     assert mk.labels_to_partition(["b", "a", "b", "c"]) == [[0, 2], [1], [3]]
+
+
+def test_end_states_absorbing_or_sinks():
+    w = np.array([[0, 0.5, 0.5], [1, 0, 0], [0, 0, 0]])
+    absorbing = mk.with_end_states(w, [2])
+    assert np.allclose(absorbing[2], [0, 0, 1]) and np.allclose(absorbing[0], w[0])
+    assert np.allclose(mk.with_end_states(absorbing, [2], absorbing=False)[2], 0)
+    assert mk.effective_information(absorbing) > mk.effective_information(w)
+
+
+def test_greedy_respects_mergeable():
+    third = 1 / 3
+    w = np.array([[third] * 3 + [0]] * 3 + [[0, 0, 0, 1]])
+    groups, _ = mk.greedy_partition(w, np.ones(4), mergeable=[0, 1])
+    assert [3] in groups and [2] in groups
+
+
+def test_macro_keeps_zero_weight_absorbing_states():
+    w = mk.with_end_states(np.array([[0, 1, 0], [0.5, 0, 0.5], [0, 0, 0]]), [2])
+    weights = np.array([0.5, 0.5, 0.0])  # the end state never passes
+    singletons = [[0], [1], [2]]
+    assert np.allclose(mk.macro_matrix(w, singletons, weights), w)
+    assert mk.causal_emergence(w, singletons, weights) == pytest.approx(0.0)

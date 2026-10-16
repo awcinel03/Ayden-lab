@@ -8,6 +8,7 @@ import tarfile
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from pipelines.experiments.network_science import football as fb
 from pipelines.ingest import statsbomb
@@ -42,12 +43,25 @@ def numbered(events, minute_every=10):
     return [e | {"index": i + 1, "minute": i // minute_every} for i, e in enumerate(events)]
 
 
+def with_possessions(events, spans):
+    """Tag events with StatsBomb's ``possession`` and ``possession_team``.
+
+    ``spans`` is a list of (last index in the possession, team), in order.
+    """
+    out, k = [], 0
+    for e in events:
+        while e["index"] > spans[k][0]:
+            k += 1
+        out.append(e | {"possession": k + 1, "possession_team": {"name": spans[k][1]}})
+    return out
+
+
 def starting_xi(team="Arsenal", xi=XI):
     lineup = [{"player": {"name": n}, "position": {"name": p}} for n, p in xi]
     return {"type": {"name": "Starting XI"}, "team": {"name": team}, "tactics": {"lineup": lineup}}
 
 
-EVENTS = numbered(
+EVENTS = with_possessions(numbered(
     [
         starting_xi(),
         ev("A", "B"),
@@ -64,7 +78,7 @@ EVENTS = numbered(
         {"type": {"name": "Substitution"}, "team": {"name": "Arsenal"}, "player": {"name": "D"}},
         ev("B", "C"),  # after the first substitution: full match only
     ]
-)
+), [(7, "Arsenal"), (8, "Chelsea"), (99, "Arsenal")])  # fmt: skip
 LINEUPS = [
     {
         "team_name": "Arsenal",
@@ -295,3 +309,45 @@ def test_run_verifies_sha_of_every_bundle(monkeypatch):
         assert "sha256" in str(e)
     else:
         raise AssertionError("tampered file accepted")
+
+
+def test_possession_transitions_follow_the_holder_and_end_states():
+    end_index, _ = fb.window_end(EVENTS, "Arsenal")
+    moves = fb.possession_transitions(EVENTS, "Arsenal", {"A", "B", "C", "D"}, end_index)
+    names = [
+        (a if isinstance(a, str) else a[0], b if isinstance(b, str) else b[0]) for a, b in moves
+    ]
+    # Possession 1: passes and loose-ball changes of holder, then Chelsea have the ball (Lost).
+    # Possession 3 is still open when the substitution ends the window, so it is left out.
+    assert names == [("A", "B"), ("B", "A"), ("A", "B"), ("B", "A"), ("A", "C"), ("C", "A"),
+                     ("A", "Lost")]  # fmt: skip
+    assert moves[0] == (("A", "D"), ("B", "D"))  # x = 0 and x = 10 are both in the first third
+
+
+def test_possession_shot_restart_and_lost():
+    shot = ev("B", kind="Shot") | {"location": [100.0, 40.0]}
+    events = with_possessions(
+        numbered(
+            [
+                starting_xi(),
+                ev("A", "B"),
+                shot,
+                ev("A", "B"),
+                ev("B", "A"),
+                ev("C", "D", team="Chelsea"),
+            ]
+        ),  # fmt: skip
+        [(3, "Arsenal"), (4, "Arsenal"), (5, "Arsenal"), (9, "Chelsea")],
+    )
+    moves = fb.possession_transitions(events, "Arsenal", {"A", "B"}, float("inf"))
+    a, b = ("A", "D"), ("B", "D")
+    assert moves == [(a, b), (b, "Shot"), (a, b), (b, "Restart"), (b, a), (a, "Lost")]
+    assert fb.third_of(39.9) == "D" and fb.third_of(40) == "M" and fb.third_of(80) == "A"
+
+
+def test_scale_report_flags_the_one_group_baseline():
+    counts = np.array([[0, 3, 1, 1], [2, 0, 1, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+    report = fb.scale_report(counts, 2, {"pairs": [[0], [1]]}, 10, random.Random(0))
+    assert report["pairs"]["ce"] == pytest.approx(0.0)
+    assert set(report) == {"pairs", "one_group", "micro"}
+    assert np.isnan(report["one_group"]["vs_random_pct"])

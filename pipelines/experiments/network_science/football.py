@@ -50,7 +50,7 @@ WINDOW_STATS = ("intensity", "density", "centralization", "mean_entropy", "recip
                 "top_pair_share", "ei", "effectiveness", "ce_roles", "ce_lines")  # fmt: skip
 NULL_STATS = ("density", "mean_entropy", "reciprocity", "top_pair_share", "ei", "ce_roles")
 CONFIG: dict[str, Any] = {
-    "version": 2,
+    "version": 3,
     "datasets": [MATCHES_SLUG, season_slug("events"), season_slug("lineups")],
     "team": "Arsenal",
     "featured_matches": list(FEATURED),
@@ -95,6 +95,16 @@ CONFIG: dict[str, Any] = {
     "random_partitions": {"reps": 500, "seed": 42, "sizes": "same as the role partition"},
     "greedy": "agglomerative merges maximising macro EI; best partition seen",
     "season_tests": {"permutations": 10000, "seed": 42},
+    "possession_chain": {
+        "states": "who has the ball, plus end states Shot / Lost / Restart",
+        "end_states": "absorbing (self-loop) for the headline; sinks (no outputs) as a check",
+        "window": "possessions that start and finish inside the starting-XI window",
+        "per_match_scales": "players (micro); roles; lines; all players in one group",
+        "pooled_micro": "starting position x third of the pitch where the ball was received",
+        "pooled_scales": "who (position), where (third), role x third, line x third, role, line",
+        "random_partitions": {"reps": 300, "seed": 42},
+        "bootstrap": {"reps": 200, "seed": 42, "interval": "basic, 95%"},
+    },
 }
 
 
@@ -181,6 +191,29 @@ def role_of(position: str) -> str:
     return f"{side}-{line}"
 
 
+def window_end(events: list[dict[str, Any]], team: str) -> tuple[float, int]:
+    """Index and minute of the team's first substitution or red card (straight or
+    second yellow); ``(inf, last minute)`` if there is none."""
+
+    def ends_window(e: dict[str, Any]) -> bool:
+        if e["team"]["name"] != team:
+            return False
+        card = (e.get("foul_committed") or e.get("bad_behaviour") or {}).get("card", {})
+        return e["type"]["name"] == "Substitution" or card.get("name") in RED_CARDS
+
+    end = next((e for e in sorted(events, key=lambda e: e["index"]) if ends_window(e)), None)
+    if end is None:
+        return float("inf"), max(e["minute"] for e in events)
+    return end["index"], end["minute"]
+
+
+def starting_xi(events: list[dict[str, Any]], team: str) -> tuple[list[str], list[str]]:
+    """Names and starting positions of the team's starting XI."""
+    xi = next(e for e in events if e["type"]["name"] == "Starting XI" and e["team"]["name"] == team)
+    lineup = xi["tactics"]["lineup"]
+    return [p["player"]["name"] for p in lineup], [p["position"]["name"] for p in lineup]
+
+
 def window_counts(
     events: list[dict[str, Any]], team: str
 ) -> tuple[list[str], list[str], np.ndarray, int]:
@@ -189,20 +222,9 @@ def window_counts(
     The window ends at the team's first substitution or red card (straight or
     second yellow), or at the end of the match.
     """
-    xi = next(e for e in events if e["type"]["name"] == "Starting XI" and e["team"]["name"] == team)
-    names = [p["player"]["name"] for p in xi["tactics"]["lineup"]]
-    positions = [p["position"]["name"] for p in xi["tactics"]["lineup"]]
-
-    def ends_window(e: dict[str, Any]) -> bool:
-        if e["team"]["name"] != team:
-            return False
-        card = (e.get("foul_committed") or e.get("bad_behaviour") or {}).get("card", {})
-        return e["type"]["name"] == "Substitution" or card.get("name") in RED_CARDS
-
+    names, positions = starting_xi(events, team)
+    end_index, end_minute = window_end(events, team)
     ordered = sorted(events, key=lambda e: e["index"])
-    end = next((e for e in ordered if ends_window(e)), None)
-    end_index = end["index"] if end else float("inf")
-    end_minute = end["minute"] if end else max(e["minute"] for e in events)
     ix = {n: i for i, n in enumerate(names)}
     counts = np.zeros((len(names), len(names)), dtype=int)
     for e in completed_passes(ordered, team):
@@ -212,6 +234,122 @@ def window_counts(
         if recipient and e["player"]["name"] in ix and recipient["name"] in ix:
             counts[ix[e["player"]["name"]], ix[recipient["name"]]] += 1
     return names, positions, counts, max(int(end_minute), 1)
+
+
+END_STATES = ("Shot", "Lost", "Restart")
+ON_BALL = {"Pass", "Shot", "Carry", "Dribble", "Ball Receipt*", "Miscontrol", "Dispossessed"}
+
+
+def third_of(x: float) -> str:
+    """D, M or A: the third of the pitch (team attacking left to right, length 120)."""
+    return "D" if x < 40 else "M" if x < 80 else "A"
+
+
+def possession_transitions(
+    events: list[dict[str, Any]], team: str, players: set[str], end_index: float
+) -> list[tuple[Any, Any]]:
+    """Ball-holder transitions in the team's possessions that finish inside the window.
+
+    A state is ``(player, third)`` where the player received or first touched the
+    ball, or an end state: ``Shot`` (the possession contains the team's shot),
+    ``Lost`` (the opponent has the next possession) or ``Restart`` (the team keeps
+    it after a stoppage). Holders change on completed passes and when another
+    player of the team is next on the ball (loose balls, recoveries). Possessions
+    still open at the window's end are left out.
+    """
+    by_possession: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for e in sorted(events, key=lambda e: e["index"]):
+        by_possession[e["possession"]].append(e)
+    ids = sorted(by_possession)
+    out: list[tuple[Any, Any]] = []
+    for k, pid in enumerate(ids):
+        chunk = by_possession[pid]
+        if chunk[0]["possession_team"]["name"] != team or chunk[-1]["index"] >= end_index:
+            continue
+        holder, shot = None, False
+        for e in chunk:
+            kind = e["type"]["name"]
+            if (
+                e["team"]["name"] != team
+                or kind not in ON_BALL
+                or e.get("player", {}).get("name") not in players
+                or "location" not in e
+                or (kind == "Ball Receipt*" and "ball_receipt" in e)  # failed reception
+            ):
+                continue
+            state = (e["player"]["name"], third_of(e["location"][0]))
+            if holder is None:
+                holder = state
+            elif state[0] != holder[0]:
+                out.append((holder, state))
+                holder = state
+            if kind == "Shot":
+                shot = True
+                break
+            recipient = e.get("pass", {}).get("recipient", {}).get("name")
+            if kind == "Pass" and "outcome" not in e["pass"] and recipient in players:
+                nxt = (recipient, third_of(e["pass"]["end_location"][0]))
+                out.append((holder, nxt))
+                holder = nxt
+        if holder is None:
+            continue
+        if shot:
+            out.append((holder, "Shot"))
+        elif k + 1 < len(ids):
+            next_team = by_possession[ids[k + 1]][0]["possession_team"]["name"]
+            out.append((holder, "Lost" if next_team != team else "Restart"))
+    return out
+
+
+def chain_counts(transitions: list[tuple[Any, Any]], states: list[Any], key: Any) -> np.ndarray:
+    """Count matrix over ``states`` after mapping each non-end state through ``key``."""
+    ix = {s: i for i, s in enumerate(states)}
+    counts = np.zeros((len(states), len(states)), dtype=int)
+    for a, b in transitions:
+        ka = a if isinstance(a, str) else key(a)
+        kb = b if isinstance(b, str) else key(b)
+        counts[ix[ka], ix[kb]] += 1
+    return counts
+
+
+def scale_report(
+    counts: np.ndarray,
+    n_play: int,
+    partitions: dict[str, list[list[int]]],
+    reps: int,
+    rng: random.Random,
+) -> dict[str, dict[str, float]]:
+    """Causal emergence of each play-state partition, end states kept separate.
+
+    For each partition: CE with absorbing end states, CE with end states as
+    sinks, the mean CE of random partitions of the play states with the same
+    group sizes, and the share of those it beats. Also the trivial partition
+    (all players in one group), the yardstick for end-state artefacts.
+    """
+    ends = list(range(n_play, len(counts)))
+    w = mk.transition_matrix(counts)
+    absorbing = mk.with_end_states(w, ends)
+    sinks = mk.with_end_states(w, ends, absorbing=False)
+    weights = counts.sum(axis=1) / counts.sum()
+    tail = [[i] for i in ends]
+    out = {}
+    for name, part in (partitions | {"one_group": [list(range(n_play))]}).items():
+        ce = mk.causal_emergence(absorbing, part + tail, weights)
+        rand = [
+            mk.causal_emergence(
+                absorbing, mk.random_partition_like(part, n_play, rng) + tail, weights
+            )
+            for _ in range(reps if len(part) > 1 else 0)
+        ]
+        out[name] = {
+            "ce": ce,
+            "ce_sinks": mk.causal_emergence(sinks, part + tail, weights),
+            "random_mean": float(np.mean(rand)) if rand else ce,
+            "vs_random_pct": float(np.mean(np.array(rand) < ce)) if rand else float("nan"),
+        }
+    out["micro"] = {"ei": mk.effective_information(absorbing),
+                    "ei_sinks": mk.effective_information(sinks)}  # fmt: skip
+    return out
 
 
 def window_stats(
@@ -298,6 +436,7 @@ def compute(
     season: dict[str, list[float]] = defaultdict(list)
     goal_diff: list[float] = []
     slot_counts: dict[tuple[str, str], int] = defaultdict(int)
+    pooled_moves: list[tuple[Any, Any]] = []
     for m in sorted(matches, key=lambda m: m["match_date"]):
         match_id = m["match_id"]
         home = m["home_team"]["home_team_name"]
@@ -401,6 +540,41 @@ def compute(
                         target=dst,
                     )
 
+        # 4. Possession chain: who has the ball, until the possession ends.
+        chain_cfg = config["possession_chain"]
+        end_index, _ = window_end(events[match_id], team)
+        moves = possession_transitions(events[match_id], team, set(xi), end_index)
+        slot_of = dict(zip(xi, positions, strict=True))
+        pooled_moves.extend(
+            (a if isinstance(a, str) else (slot_of[a[0]], a[1]),
+             b if isinstance(b, str) else (slot_of[b[0]], b[1]))
+            for a, b in moves
+        )  # fmt: skip
+        pc = chain_counts(moves, list(xi) + list(END_STATES), key=lambda st: st[0])
+        for end in END_STATES:
+            add(
+                f"p_{end.lower()}",
+                int(pc[:, len(xi) + END_STATES.index(end)].sum()),
+                match=match_id,
+            )
+        add("p_transitions", int(pc.sum()), match=match_id)
+        report = scale_report(
+            pc, len(xi),
+            {"roles": mk.labels_to_partition(roles), "lines": mk.labels_to_partition(lines)},
+            chain_cfg["random_partitions"]["reps"],
+            random.Random(chain_cfg["random_partitions"]["seed"] + match_id),
+        )  # fmt: skip
+        add("p_ei", report["micro"]["ei"], "bits", match=match_id)
+        add("p_ei_sinks", report["micro"]["ei_sinks"], "bits", match=match_id)
+        for scale, r in report.items():
+            if scale == "micro":
+                continue
+            for key, v in r.items():
+                if isinstance(v, float) and np.isnan(v):  # no random comparison for one group
+                    continue
+                add(f"p_{scale}_{key}", v, match=match_id)
+                season[f"p_{scale}_{key}"].append(v)
+
     # Season summaries.
     n_matches = len(goal_diff)
     for stat, values in season.items():
@@ -410,6 +584,14 @@ def compute(
     add("season_ce_lines_negative", int(sum(v < 0 for v in season["ce_lines"])), "matches")
     add("season_ce_roles_beats_random_median",
         int(sum(v > 0.5 for v in season["ce_roles_vs_random_pct"])), "matches")  # fmt: skip
+    for scale in ("roles", "lines", "one_group"):
+        ce = season.get(f"p_{scale}_ce", [])
+        add(f"season_p_{scale}_ce_positive", int(sum(v > 0 for v in ce)), "matches")
+        add(f"season_p_{scale}_ce_sinks_positive",
+            int(sum(v > 0 for v in season.get(f"p_{scale}_ce_sinks", []))), "matches")  # fmt: skip
+        pct = [v for v in season.get(f"p_{scale}_vs_random_pct", []) if not np.isnan(v)]
+        if pct:
+            add(f"season_p_{scale}_beats_random_median", int(sum(v > 0.5 for v in pct)), "matches")
     test_cfg = config["season_tests"]
     rng = random.Random(test_cfg["seed"])
     for stat in ("intensity", "centralization", "ei") if n_matches >= 3 else ():
@@ -442,6 +624,53 @@ def compute(
         add("pooled_greedy_group", len(group), group=k, slots=[slots[i] for i in group])
     for s in slots:
         add("pooled_slot_passes", int(pooled[ix[s]].sum()), "passes", slot=s, role=role_of(s))
+
+    # Season pooled possession chain: micro = starting position x third.
+    chain_cfg = config["possession_chain"]
+    play = sorted({x for move in pooled_moves for x in move if not isinstance(x, str)})
+    if play:
+        pc = chain_counts(pooled_moves, play + list(END_STATES), key=lambda st: st)
+        scales = {
+            "who": lambda st: st[0],
+            "where": lambda st: st[1],
+            "role_third": lambda st: (role_of(st[0]), st[1]),
+            "line_third": lambda st: (line_of(st[0]), st[1]),
+            "role": lambda st: role_of(st[0]),
+            "line": lambda st: line_of(st[0]),
+        }
+        parts = {k: mk.labels_to_partition([f(st) for st in play]) for k, f in scales.items()}
+        rng = random.Random(chain_cfg["random_partitions"]["seed"])
+        report = scale_report(pc, len(play), parts, chain_cfg["random_partitions"]["reps"], rng)
+        add("pp_transitions", int(pc.sum()), "transitions")
+        add("pp_states", len(play), "states")
+        add("pp_ei", report["micro"]["ei"], "bits")
+        add("pp_ei_sinks", report["micro"]["ei_sinks"], "bits")
+        for end in END_STATES:
+            add(f"pp_{end.lower()}", int(pc[:, len(play) + END_STATES.index(end)].sum()))
+        boot_cfg = chain_cfg["bootstrap"]
+        brng = random.Random(boot_cfg["seed"])
+        ends = list(range(len(play), len(pc)))
+        boots: dict[str, list[float]] = defaultdict(list)
+        boot_parts = parts | {"one_group": [list(range(len(play)))]}
+        for _ in range(boot_cfg["reps"]):
+            bc = resample_counts(pc, brng)
+            bw = mk.with_end_states(mk.transition_matrix(bc), ends)
+            bweights = bc.sum(axis=1) / bc.sum()
+            for k, part in boot_parts.items():
+                boots[k].append(mk.causal_emergence(bw, part + [[i] for i in ends], bweights))
+        for scale, r in report.items():
+            if scale == "micro":
+                continue
+            groups = len(parts[scale]) if scale in parts else 1
+            lo = hi = None
+            if scale in boots:
+                q_lo, q_hi = np.percentile(boots[scale], [2.5, 97.5])
+                lo, hi = float(2 * r["ce"] - q_hi), float(2 * r["ce"] - q_lo)
+            pct = None if np.isnan(r["vs_random_pct"]) else r["vs_random_pct"]
+            add("pp_scale", r["ce"], "bits", scale=scale, groups=groups, ce_sinks=r["ce_sinks"],
+                random_mean=r["random_mean"], vs_random_pct=pct, lo=lo, hi=hi)  # fmt: skip
+        for st in play:
+            add("pp_state_transitions", int(pc[play.index(st)].sum()), slot=st[0], third=st[1])
     return rows
 
 

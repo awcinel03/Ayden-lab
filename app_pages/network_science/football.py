@@ -50,7 +50,9 @@ st.write(
     "the ball flowed through and which partnerships carried it. Here I extend that to all 38 "
     "matches of the unbeaten league season and ask two harder questions: is Arsenal's passing "
     "structure more than what pass volumes alone would produce, and is the team better "
-    "described as eleven individual players or as a handful of positional roles?"
+    "described as eleven individual players or as a handful of positional roles? Finally I "
+    "follow each possession to its end (a shot, a lost ball or a restart) to ask whether "
+    "*where* the ball is matters more than *who* has it."
 )
 
 st.header("Method")
@@ -81,7 +83,15 @@ st.markdown(
     "pair is one unit) or lines (keeper, defence, midfield, attack). I compare roles with "
     "500 random groupings of the same sizes, and let a greedy search look for any grouping "
     "that helps. Finally I pool the whole season by starting position, which gives about "
-    "11,700 passes and removes most small-sample bias."
+    "11,700 passes and removes most small-sample bias.\n"
+    "- **Possession chains:** the same chain, but following each Arsenal possession to its "
+    "end: **Shot**, **Lost** (the opponent has the next possession) or **Restart** (Arsenal "
+    "keep it after a stoppage). End states are absorbing. Because absorbing states are "
+    "perfectly deterministic, they can inflate EI, so every grouping is compared with "
+    "random groupings of the same sizes and with the trivial grouping of all players into "
+    "one, and every result is repeated with the end states as sinks. Pooled over the season, "
+    "the micro states are *starting position × third of the pitch* where the ball was "
+    "received, so I can merge by *who* (position), by *where* (third), or by both."
 )
 
 run = db.latest_run(ENTRY.slug)
@@ -271,8 +281,14 @@ with st.container(horizontal=True):
     st.metric("Window passes per match", f"{season['w_passes'].mean():.0f}", border=True)
     st.metric("Pooled passes", f"{value('pooled_passes'):,.0f}", border=True)
 
-overview, pitch, chance, scales = st.tabs(
-    ["Season overview", "Match on the pitch", "Against chance", "Players or positions?"]
+overview, pitch, chance, scales, possession = st.tabs(
+    [
+        "Season overview",
+        "Match on the pitch",
+        "Against chance",
+        "Players or positions?",
+        "Possession chains",
+    ]
 )
 
 with overview:
@@ -571,6 +587,94 @@ with scales:
         + ". That is negligible."
     )
 
+
+SCALE_NAMES = {
+    "who": "Who: starting position",
+    "where": "Where: third of the pitch",
+    "role_third": "Role × third",
+    "line_third": "Line × third",
+    "role": "Role",
+    "line": "Line",
+    "one_group": "All players merged (artefact baseline)",
+}
+pooled_scales = series("pp_scale", "scale", "groups", "ce_sinks", "random_mean", "vs_random_pct",
+                       "lo", "hi").set_index("scale")  # fmt: skip
+
+with possession:
+    if "p_transitions" not in season or pooled_scales.empty:
+        empty_state("This run has no possession chains; it predates them.")
+    else:
+        with st.container(horizontal=True):
+            st.metric("Shots per match", f"{season['p_shot'].mean():.1f}", border=True)
+            st.metric("Possessions lost per match", f"{season['p_lost'].mean():.1f}", border=True)
+            st.metric("Restarts per match", f"{season['p_restart'].mean():.1f}", border=True)
+            st.metric("Pooled transitions", f"{value('pp_transitions'):,.0f}", border=True)
+        ordered = season.sort_values("date")
+        fig = go.Figure()
+        fig.add_hline(y=0, line={"color": GRAY, "width": 1, "dash": "dash"})
+        for column, name, color, symbol in (
+            ("p_one_group_ce", "All players merged into one", GRAY, "x-thin-open"),
+            ("p_lines_random_mean", "Random groupings, same sizes as lines", GRAY, "diamond-open"),
+            ("p_lines_ce", "Grouping by line", BLUE, "circle"),
+        ):
+            fig.add_trace(
+                go.Scatter(
+                    x=pd.to_datetime(ordered["date"]),
+                    y=ordered[column],
+                    mode="markers",
+                    name=name,
+                    marker={"size": 9, "color": color, "symbol": symbol, "line": {"width": 2}},
+                    customdata=ordered[["title"]].to_numpy(),
+                    hovertemplate=f"<b>%{{customdata[0]}}</b><br>{name}: %{{y:+.3f}} bits"
+                    "<extra></extra>",
+                )
+            )
+        fig.update_layout(
+            height=380,
+            margin={"l": 0, "r": 0, "t": 30, "b": 0},
+            yaxis_title="Causal emergence (bits), end states absorbing",
+            legend={"orientation": "h", "y": 1.14},
+        )
+        st.plotly_chart(fig, key="possession_chart", width="stretch", theme="streamlit")
+        st.caption(
+            f"Once possessions can end, grouping players by line *gains* information in "
+            f"{value('season_p_lines_ce_positive'):.0f} of {n_matches} matches. But random "
+            f"groupings of the same sizes gain just as much, lines beat the typical random "
+            f"grouping in only {value('season_p_lines_beats_random_median'):.0f} matches, and "
+            f"merging every player into one gains the most of all. With the end states treated "
+            f"as sinks instead, grouping by line gains information in "
+            f"{value('season_p_lines_ce_sinks_positive'):.0f} matches and merging everyone in "
+            f"{value('season_p_one_group_ce_sinks_positive'):.0f}."
+        )
+        table = pooled_scales.reindex([k for k in SCALE_NAMES if k in pooled_scales.index])
+        st.markdown("**Season pooled: which scale keeps the most information?**")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Scale": [SCALE_NAMES[k] for k in table.index],
+                    "Groups": table["groups"].astype(int),
+                    "Causal emergence (bits)": table["value"].map("{:+.3f}".format),
+                    "Bias-corrected 95% interval": [
+                        "–" if pd.isna(lo) else f"{lo:+.2f} to {hi:+.2f}"
+                        for lo, hi in zip(table["lo"], table["hi"], strict=True)
+                    ],
+                    "Random, same sizes": table["random_mean"].map("{:+.3f}".format),
+                    "Beats random": [
+                        "–" if pd.isna(v) else f"{v:.0%}" for v in table["vs_random_pct"]
+                    ],
+                    "End states as sinks": table["ce_sinks"].map("{:+.3f}".format),
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(
+            f"Micro scale: {value('pp_states'):.0f} states (starting position × third where "
+            f"the ball was received) plus the three end states, from "
+            f"{value('pp_transitions'):,.0f} transitions. *Beats random* is the share of "
+            "random groupings of the same sizes that the scale outperforms."
+        )
+
 st.header("Takeaways")
 ei_below, _, ei_above = beyond("ei")
 ent_below, _, _ = beyond("mean_entropy")
@@ -614,9 +718,32 @@ bullets += [
     "That is the flip side of the previous point: the information lives in who each "
     "player passes to, and merging, say, the two centre-backs blurs two distinct passing "
     "profiles into one. I think that is a real statement about this team, but it rests on "
-    "completed passes only. A possession chain that also includes shots and turnovers is the "
-    "natural next test.",
+    "completed passes only.",
 ]
+if not pooled_scales.empty and {"where", "line", "one_group"} <= set(pooled_scales.index):
+    where, line_, blob = (pooled_scales.loc[k] for k in ("where", "line", "one_group"))
+    bullets += [
+        f"**Following possessions to their end creates emergence, but only on paper.** With "
+        f"shots, lost balls and restarts as absorbing end states, merging players into lines "
+        f"gains information in {value('season_p_lines_ce_positive'):.0f} of {n_matches} "
+        "matches. Random groupings of the same sizes gain as much, and merging everyone into "
+        "a single blob gains the most. The deterministic end states take up a bigger share of "
+        "a smaller chain, which raises EI with no football structure involved. I think this "
+        "is the most useful methodological point here: causal emergence needs to be "
+        "benchmarked against random and trivial groupings, not just against zero.",
+        f"**Pitch thirds beat positional lines, at the same coarseness.** Pooled over the "
+        f"season, merging states into three thirds of the pitch loses less information than "
+        f"merging them into four positional lines, whichever way the end states are treated "
+        f"({where['value']:+.2f} vs {line_['value']:+.2f} bits absorbing, "
+        f"{where['ce_sinks']:+.2f} vs {line_['ce_sinks']:+.2f} as sinks). Thirds also beat "
+        f"random groupings of their size ({where['random_mean']:+.2f}), while lines do no "
+        f"better than random ({line_['random_mean']:+.2f}). No scale clears the all-in-one "
+        f"baseline ({blob['lo']:+.2f} to {blob['hi']:+.2f} bits after bias correction), so "
+        "there is still no genuine causal emergence. My reading is that where the ball is "
+        "tells you more about what happens next than which line the player belongs to. "
+        "Which scale looks best overall depends on how the end states are treated, and I "
+        "think that sensitivity is itself worth reporting.",
+    ]
 st.markdown("\n".join(f"- {b}" for b in bullets))
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
