@@ -5,11 +5,12 @@ import streamlit as st
 
 from lab import db, storage
 from lab.registry import entry
-from lab.ui import empty_state, page_header, provenance_footer
+from lab.ui import REPO_URL, empty_state, page_header, provenance_footer
 
 ENTRY = entry("wine-flavor-network")
 CODE_PATHS = (
     "pipelines/ingest/wine_flavor.py",
+    "pipelines/ingest/wine_flavor_lexicon_v2.json",
     "pipelines/ingest/wine_flavor_lexicon_v1.json",
     "pipelines/common/network_metrics.py",
     "pipelines/experiments/network_science/wine_flavor.py",
@@ -18,7 +19,8 @@ CODE_PATHS = (
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 COMMUNITY_COLORS = {1: BLUE, 2: ORANGE, 3: AQUA}
 OTHER_COLOR = "#8c8c8c"
-# Marker terms for the red/white reading in Takeaways (checked against the partition).
+LEXICON_V2_URL = f"{REPO_URL}/blob/main/pipelines/ingest/wine_flavor_lexicon_v2.json"
+# Marker terms for the red/white reading (checked against each partition, never assumed).
 RED_MARKERS = ("cherry", "tannin", "blackberry", "plum")
 WHITE_MARKERS = ("apple", "citrus", "lemon", "pear")
 
@@ -32,7 +34,9 @@ st.write(
     "sensory vocabulary rather than physical connections or messages. I then apply the same "
     "framework as in the Enron and *C. elegans* entries (degree distribution, small-world "
     "properties, robustness, community structure). It is Chapter 3 of my write-up "
-    "*Conspiracies, Connectomes, and Cabernet*."
+    "*Conspiracies, Connectomes, and Cabernet*. Since writing it I have corrected how terms "
+    "are matched in the reviews; the results below use the corrected rule, and a section "
+    "near the end shows what changed from my original analysis."
 )
 
 st.header("Method")
@@ -40,13 +44,22 @@ st.markdown(
     "- **Data:** the Kaggle *Wine Reviews* dataset (winemag-data-130k-v2, reviews scraped from "
     "Wine Enthusiast). The review text belongs to Wine Enthusiast, so it never leaves my "
     "machine: the pipeline publishes only derived counts (how many reviews mention each term, "
-    "and each pair of terms). No review text is stored or shown here.\n"
-    "- **Lexicon:** 116 descriptors I took from the UC Davis Wine Aroma Wheel (fruit, floral, "
-    "spice, earth, oak, plus structural words such as *acid*, *acidity*, *tannin* and "
-    "*fresh*), kept exactly as in my notebook.\n"
-    "- **Matching:** a term counts if it appears anywhere in the lower-cased review "
-    "(substring, no word boundaries), as in my notebook. So *acid* also matches inside "
-    "*acidity* and *tar* inside *tart*. Reviews with fewer than two terms are skipped.\n"
+    "each pair of terms, and how many each matching rule alone would catch). "
+    "No review text is stored or shown here.\n"
+    "- **Lexicon:** the same 116 descriptors as my notebook, taken from the UC Davis Wine "
+    "Aroma Wheel (fruit, floral, spice, earth, oak, plus structural words such as *acid*, "
+    "*acidity*, *tannin* and *fresh*). Version 2 of the lexicon adds, for every term, an "
+    f"explicit list of accepted word forms ([wine_flavor_lexicon_v2.json]({LEXICON_V2_URL})): "
+    "the term plus plurals and derivations of the same flavour, e.g. *tar, tarry*; *jam, jams, "
+    "jammy, jamminess*; *herbs, herb*; *tannin, tannins, tannic*. Words that merely contain "
+    "the term (*tart*, *pineapple*, *breadth*), other lexicon terms (*acidity* is not a form "
+    "of *acid*; *smoky* is not a form of *smoke*), negations (*unoaked*) and typos are not "
+    "forms. Each form belongs to one term only.\n"
+    "- **Matching (v2):** each review is lower-cased and split into words with the regular "
+    "expression `\\w+` (letters, digits and underscores; hyphens and apostrophes split words, "
+    "so *tar-like* gives *tar*). A review mentions a term if any of its forms is one of those "
+    "words. Reviews with fewer than two terms are skipped, as in my notebook. My original "
+    "analysis matched substrings instead; see the last section.\n"
     "- **Network:** one node per term found in at least one review; an edge joins two terms "
     "if at least **10** reviews mention both, weighted by that number of reviews. A term "
     "whose pairs all fall below 10 reviews stays in as an isolated node.\n"
@@ -462,6 +475,228 @@ else:
             f"longest shortest path is {hop_counts['hops'].max():.0f} hops."
         )
 
+
+def sides(communities: pd.Series) -> dict[str, str]:
+    """Map each term to "red", "white" or "community N", if the markers split cleanly."""
+    red = {communities[t] for t in RED_MARKERS if t in communities.index}
+    white = {communities[t] for t in WHITE_MARKERS if t in communities.index}
+    if len(red) != 1 or len(white) != 1 or red == white:
+        return {t: f"community {c:.0f}" for t, c in communities.items()}
+    r, w = red.pop(), white.pop()
+    names = {r: "red", w: "white"}
+    return {t: names.get(c, f"community {c:.0f}") for t, c in communities.items()}
+
+
+comm_v2 = series("term_community", "term").set_index("term")["value"]
+comm_v1 = series("v1_term_community", "term").set_index("term")["value"]
+side_v2, side_v1 = sides(comm_v2), sides(comm_v1)
+split_v2 = "red" in side_v2.values() and "white" in side_v2.values()
+split_v1 = "red" in side_v1.values() and "white" in side_v1.values()
+
+st.header("What changed from my original analysis")
+v1_terms = series("v1_term_reviews", "term", "degree")
+if v1_terms.empty:
+    empty_state("This run has no comparison with my original matching.")
+else:
+    rev1 = v1_terms.set_index("term")["value"]
+    rev2 = terms.set_index("term")["value"]
+    removed = series("substring_only_reviews", "term").set_index("term")["value"]
+    added = series("forms_only_reviews", "term").set_index("term")["value"]
+    st.write(
+        "My original notebook counted a term whenever its letters appeared anywhere in a "
+        "review. That over-counts: *tar* matched inside *tart*, *nectarine* and *star*; *acid* "
+        "inside *acidity*; *apple* inside *pineapple*; *honey* inside *honeysuckle* and "
+        "*honeydew*. It also under-counts, because a review that says *herb* or *tannic* never "
+        "contains the letters *herbs* or *tannin*. Version 2 fixes both with explicit word forms "
+        "matched as whole words. The two effects are separate: false matches removed, and "
+        "missed forms added."
+    )
+
+    def change(term: str) -> str:
+        """``v1 → v2`` review counts for one term."""
+        return f"{rev1.get(term, 0):,.0f} → {rev2.get(term, 0):,.0f}"
+
+    points = []
+    if "tar" in rev1.index:
+        points.append(
+            f"**tar:** {change('tar')} reviews; {removed.get('tar', 0):,.0f} reviews matched "
+            "*tar* only inside other words."
+        )
+    v1_pairs = series("v1_top_pair", "rank", "term_a", "term_b")
+    if not v1_pairs.empty and "acidity" in rev1.index:
+        top1 = v1_pairs.iloc[0]
+        same = {top1.term_a, top1.term_b} == {"acid", "acidity"}
+        if same and top1.value == rev1["acidity"]:
+            points.append(
+                f"**acid:** {change('acid')} reviews. My original strongest pair, acid + "
+                f"acidity ({top1.value:,.0f} reviews), is exactly the number of reviews "
+                "mentioning *acidity*: every one also counted as *acid*, so the pair was "
+                "mostly one word counted twice."
+            )
+        else:
+            points.append(f"**acid:** {change('acid')} reviews.")
+    for term, inside in (("apple", "pineapple"), ("honey", "honeysuckle and honeydew")):
+        if term in rev1.index:
+            points.append(
+                f"**{term}:** {change(term)} reviews, no longer counting *{inside}* "
+                f"({removed.get(term, 0):,.0f} reviews matched only that way)."
+            )
+    gains = added.sort_values(ascending=False).head(3)
+    if len(gains) and gains.iloc[0] > 0:
+        points.append(
+            "**Missed forms:** the largest additions are "
+            + ", ".join(f"{t} ({change(t)}; +{v:,.0f} via its new forms)" for t, v in gains.items())
+            + "."
+        )
+    st.markdown("\n".join(f"- {x}" for x in points))
+
+    with st.container(horizontal=True):
+        st.metric("False matches removed", f"{removed.sum():,.0f}", border=True)
+        st.metric("Missed forms added", f"{added.sum():,.0f}", border=True)
+        both = pd.DataFrame({"v1": rev1, "v2": rev2}).fillna(0)
+        rel = (both["v2"] - both["v1"]) / both["v1"].where(both["v1"] > 0)
+        st.metric("Terms down more than 10%", f"{(rel < -0.1).sum():,.0f}", border=True)
+        st.metric("Terms up more than 10%", f"{(rel > 0.1).sum():,.0f}", border=True)
+    st.caption(
+        "Removed and added count review–term matches over all reviews: a review matched by "
+        "only one of the two rules. The term counts below include only reviews with at least "
+        "two terms, so they don't add up exactly."
+    )
+    moved = both.assign(change=both["v2"] - both["v1"])
+    moved = moved.reindex(moved["change"].abs().sort_values(ascending=False).index).head(12)
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Term": moved.index,
+                "Reviews (original)": moved["v1"].astype(int).to_numpy(),
+                "Reviews (v2)": moved["v2"].astype(int).to_numpy(),
+                "Matched only inside other words": removed.reindex(moved.index)
+                .fillna(0)
+                .astype(int)
+                .to_numpy(),
+                "Matched only by added forms": added.reindex(moved.index)
+                .fillna(0)
+                .astype(int)
+                .to_numpy(),
+            }
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    def leader(df: pd.DataFrame, col: str) -> str:
+        """The term(s) with the highest ``col``."""
+        top = df[df[col] == df[col].max()]
+        return ", ".join(top["term"]) + f" ({df[col].max():,.0f})"
+
+    def pair(metric: str) -> str:
+        """The strongest pair of a run's ``top_pair`` series."""
+        p = series(metric, "rank", "term_a", "term_b")
+        return (
+            f"{p.iloc[0].term_a} + {p.iloc[0].term_b} ({p.iloc[0].value:,.0f})" if len(p) else "–"
+        )
+
+    def at_v1(strategy: str, step: int) -> float:
+        """A v1 giant fraction at ``step``, or NaN."""
+        c = series("v1_giant_fraction", "strategy", "step")
+        c = c[(c["strategy"] == strategy) & (c["step"] == step)]
+        return float(c["value"].iloc[0]) if len(c) else float("nan")
+
+    sizes_v1 = series("v1_community_size", "rank")["value"]
+    compare = pd.DataFrame(
+        [
+            (
+                "Edges (pairs in ≥ 10 reviews)",
+                f"{value('v1_edges'):,.0f}",
+                f"{value('edges'):,.0f}",
+            ),
+            ("Average degree", f"{value('v1_avg_degree'):.2f}", f"{value('avg_degree'):.2f}"),
+            ("Density", f"{value('v1_density'):.3f}", f"{value('density'):.3f}"),
+            (
+                "Average clustering",
+                f"{value('v1_avg_clustering'):.3f}",
+                f"{value('avg_clustering'):.3f}",
+            ),
+            ("Most frequent term", leader(v1_terms, "value"), leader(terms, "value")),
+            ("Highest degree", leader(v1_terms, "degree"), leader(terms, "degree")),
+            ("Strongest pair (reviews)", pair("v1_top_pair"), pair("top_pair")),
+            (
+                "Louvain communities (seed 42), sizes",
+                ", ".join(f"{v:.0f}" for v in sizes_v1),
+                ", ".join(f"{v:.0f}" for v in sizes["value"]),
+            ),
+            ("Modularity", f"{value('v1_modularity'):.3f}", f"{value('modularity'):.3f}"),
+            (
+                "Largest component after 25 removals (targeted / random)",
+                f"{at_v1('targeted', 25):.3f} / {at_v1('random', 25):.3f}",
+                f"{t25:.3f} / {r25:.3f}",
+            ),
+            ("Community of tar", side_v1.get("tar", "–"), side_v2.get("tar", "–")),
+        ],
+        columns=["", "Original (substring)", "v2 (word forms)"],
+    )
+    st.dataframe(compare, hide_index=True, width="stretch")
+
+    st.subheader("What that does to the conclusions")
+    lines = []
+    if "tar" in side_v1 and "tar" in side_v2 and side_v1["tar"] != side_v2["tar"]:
+        lines.append(
+            f"**tar moves from the {side_v1['tar']} community to the {side_v2['tar']} one.** "
+            "In my original analysis "
+            f"{removed.get('tar', 0) / rev1['tar']:.0%} of its matches came from other words "
+            "such as *tart*, *nectarine* and *star*, which pulled it towards the white-wine "
+            "terms. I read the move as tar going back to where tasters use it, for red wines."
+        )
+    if split_v1 and split_v2:
+        lines.append(
+            "**The red/white split holds.** In both versions "
+            + ", ".join(RED_MARKERS)
+            + " share one community and "
+            + ", ".join(WHITE_MARKERS)
+            + " another."
+        )
+    elif split_v1 and not split_v2:
+        lines.append("**The red/white split no longer holds** with the corrected matching.")
+    moves: dict[tuple[str, str], list[str]] = {}
+    for t in side_v2:
+        before, after = side_v1.get(t), side_v2[t]
+        if t == "tar" or before is None or before == after:
+            continue
+        if before.startswith("community") and after.startswith("community"):
+            continue  # an unlabelled group renumbered, not a move
+        moves.setdefault((before, after), []).append(t)
+    if moves:
+        size_of = comm_v2.value_counts()
+        lines.append(
+            "**Other terms changed community:** "
+            + "; ".join(
+                f"{', '.join(ts)} ({a} → {b}"
+                + (
+                    f", a separate group of {size_of[float(b.split()[1])]:.0f} terms"
+                    if b.startswith("community")
+                    else ""
+                )
+                + ")"
+                for (a, b), ts in sorted(moves.items(), key=lambda x: -len(x[1]))
+            )
+            + "."
+        )
+    if value("v1_edges") > value("edges"):
+        lines.append(
+            "**Slightly less dense, just as near-complete:** "
+            f"{value('v1_edges') - value('edges'):,.0f} fewer edges and average degree "
+            f"{value('v1_avg_degree'):.2f} → "
+            f"{value('avg_degree'):.2f}. Robustness after 25 removals is "
+            + (
+                "unchanged."
+                if (round(at_v1("targeted", 25), 3), round(at_v1("random", 25), 3))
+                == (round(t25, 3), round(r25, 3))
+                else f"{at_v1('targeted', 25):.3f} / {at_v1('random', 25):.3f} → "
+                f"{t25:.3f} / {r25:.3f} (targeted / random)."
+            )
+        )
+    st.markdown("\n".join(f"- {x}" for x in lines))
+
 st.header("Takeaways")
 iso = terms[terms["degree"] == 0]
 linked = terms[terms["degree"] > 0]
@@ -491,21 +726,42 @@ bullets = [
     f"{lost_beyond(r25, 25):.0f} (random) fall outside the largest component, counting any "
     "term isolated from the start. The network degrades by simple subtraction.",
 ]
-if have_graph:
-    part = flavors.set_index("term")["community"]
-    red = {part[t] for t in RED_MARKERS if t in part.index}
-    white = {part[t] for t in WHITE_MARKERS if t in part.index}
-    split = len(red) == 1 and len(white) == 1 and red != white
+if not comm_v2.empty:
     sentence = (
         f"**Communities.** Louvain finds {value('communities'):.0f} communities with modularity "
         f"{value('modularity'):.3f}, sizes " + ", ".join(f"{v:.0f}" for v in sizes["value"]) + "."
     )
-    if split:
-        r, w = red.pop(), white.pop()
+    if split_v2:
         sentence += (
-            f" {', '.join(RED_MARKERS)} all fall in community {r}, and "
-            f"{', '.join(WHITE_MARKERS)} in community {w}. I read this as the red/white divide, "
-            "recovered from co-occurrence alone; the algorithm knows nothing about wine."
+            f" {', '.join(RED_MARKERS)} all fall in one, and {', '.join(WHITE_MARKERS)} in "
+            "another. I read this as the red/white divide, recovered from co-occurrence alone; "
+            "the algorithm knows nothing about wine."
+        )
+    reviews = terms.set_index("term")["value"]
+    others = [
+        (c, grp.index.tolist())
+        for c, grp in comm_v2.groupby(comm_v2)
+        if len(grp) > 1 and not any(side_v2[t] in ("red", "white") for t in grp.index)
+    ]
+    for _, members in others:
+        lead = sorted(members, key=lambda t: -reviews.get(t, 0))
+        sentence += (
+            f" A further community of {len(members)} terms ({', '.join(lead[:6])}"
+            + ("…" if len(lead) > 6 else "")
+            + ") stands apart"
+            + ("; I read it as the vocabulary of barrel ageing" if "oak" in members else "")
+            + "."
+        )
+    sweep_n = series("sweep_communities", "seed")["value"]
+    if len(sweep_n) and others:
+        same = int((sweep_n == value("communities")).sum())
+        sentence += (
+            f" {same} of {len(sweep_n)} other seeds also find {value('communities'):.0f} "
+            "communities; the rest find "
+            + " or ".join(sorted({f"{v:.0f}" for v in sweep_n if v != value("communities")}))
+            + ", so the smaller group is not found every time."
+            if same < len(sweep_n)
+            else ""
         )
     bullets.append(sentence)
 if len(iso):

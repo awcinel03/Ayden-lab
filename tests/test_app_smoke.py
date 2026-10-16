@@ -344,7 +344,11 @@ def _wine_fixtures():
     from pipelines.experiments.network_science import wine_flavor as wx
     from tests.test_pipelines_wine_flavor import SMALL, toy_tables
 
-    rows, flavors, cooccurrence, paths = wx.compute(*toy_tables(), SMALL)
+    terms, edges = toy_tables()
+    v2_terms = terms.assign(substring_only_reviews=0, forms_only_reviews=2)
+    rows, flavors, cooccurrence, paths = wx.compute(v2_terms, edges, SMALL)
+    # The original (v1) matching: one fewer bridge and inflated counts.
+    rows += wx.compute_comparison(terms.assign(reviews=terms["reviews"] + 5), edges[1:], SMALL)
     results = pd.DataFrame([r | {"dims": r.get("dims", {})} for r in rows])
     tables = {
         "flavors.parquet": pd.DataFrame(flavors),
@@ -383,6 +387,8 @@ def test_wine_flavor_page_renders_results(monkeypatch, with_artifacts):
     assert any(h.value == "Takeaways" for h in at.header)
     page_text = " ".join(m.value for m in at.markdown)
     assert "brett (17 reviews)" in page_text
+    assert any(h.value == "What changed from my original analysis" for h in at.header)
+    assert len(at.dataframe) >= 3  # pairings, change table, v1-vs-v2 table
     if with_artifacts:
         assert not at.info
         assert "I read this as the red/white divide" in page_text
