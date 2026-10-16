@@ -15,6 +15,8 @@ CODE_PATHS = (
 BLUE, ORANGE, GRAY = "#2a78d6", "#eb6834", "#8a8a85"
 # Ordinal blue ramp (steps 250/400/500/650): one hue that darkens with severity.
 RISK = {"Low": "#86b6ef", "Moderate": "#3987e5", "High": "#256abf", "Extreme": "#104281"}
+# Size is a second cue: adjacent ramp steps are close, so colour alone is not enough.
+RISK_SIZE = {"Low": 9, "Moderate": 12, "High": 15, "Extreme": 18}
 FEATURE_SETS = {
     "sst_ssta": "SST + SSTA lags",
     "lags": "+ DHW lags",
@@ -291,7 +293,7 @@ else:
                 lon=part["longitude"],
                 mode="markers",
                 name=band,
-                marker={"size": 14, "color": color},
+                marker={"size": RISK_SIZE[band], "color": color},
                 customdata=part[["predicted", "actual"]].to_numpy(),
                 hovertemplate=(
                     f"<b>{band}</b><br>Forecast DHW %{{customdata[0]:.1f}}<br>"
@@ -310,9 +312,9 @@ else:
     )
     show(fig, "risk_map", height=560)
     st.caption(
-        "One marker per ~1° grid cell, coloured by forecast DHW using NOAA's bands: Low < 1, "
-        "Moderate 1–4, High 4–8, Extreme ≥ 8. It opens on the test window's worst forecast "
-        "day; an average day is almost all Low."
+        "One marker per ~1° grid cell, coloured and sized by forecast DHW using NOAA's bands: "
+        "Low < 1, Moderate 1–4, High 4–8, Extreme ≥ 8. It opens on the test window's worst "
+        "forecast day; an average day is almost all Low."
     )
 
 st.header("Takeaways")
