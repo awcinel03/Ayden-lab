@@ -1,4 +1,4 @@
-"""Causal emergence in the worm and in email: do macro-nodes beat micro-nodes?
+"""Causal emergence in the worm, in email and in Arsenal's passing: do macro-nodes win?
 
 Run: python -m pipelines.experiments.network_science.causal_emergence [--allow-dirty]
 
@@ -10,10 +10,13 @@ the micro scale and after merging nodes into macro-nodes:
   (integrator, relay, broadcaster), a greedy search restricted to merges
   within a role, and an unrestricted greedy search;
 - Enron email (undirected giant component): structurally equivalent
-  addresses (identical contacts) and Louvain communities.
+  addresses (identical contacts) and Louvain communities;
+- Arsenal 2003/04 (weighted passing chains of each match's starting XI, as in
+  the football entry): positional roles and lines, and a greedy search.
 
 Every grouping is compared with random groupings of the same sizes, and each
-network with degree-preserving rewired versions of itself. Reads the SNAP
+network with degree-preserving rewired versions of itself (for Arsenal, the
+football entry's configuration null, which keeps passes made and received). Reads the SNAP
 datasets already in Storage (verifying sha256s) and is skipped by fingerprint
 when nothing changed.
 """
@@ -39,6 +42,7 @@ from pipelines.common.provenance import git_sha, sha256_bytes
 from pipelines.common.runs import start_run, tracked, write_results
 from pipelines.common.sync import sync_experiments
 from pipelines.experiments.network_science import c_elegans, enron
+from pipelines.experiments.network_science import football as fb
 from supabase import Client
 
 log = logging.getLogger(__name__)
@@ -50,7 +54,7 @@ EMAIL_SLUG = enron.DATASET_SLUG
 ROLES = ("integrator", "relay", "broadcaster")
 CONFIG: dict[str, Any] = {
     "version": 1,
-    "datasets": [WORM_SLUG, WORM_META_SLUG, EMAIL_SLUG],
+    "datasets": [WORM_SLUG, WORM_META_SLUG, EMAIL_SLUG, *fb.CONFIG["datasets"]],
     "chain": "random walk: row i spreads evenly over i's out-neighbours; edges unweighted",
     "ei": "Klein & Hoel 2020: H(<W_i>) - <H(W_i)> over nodes with outputs; uniform intervention",
     "effectiveness": "EI / log2(nodes with outputs)",
@@ -71,6 +75,18 @@ CONFIG: dict[str, Any] = {
         "random_groupings": {"structural_equivalence": 20, "louvain": 100},
         "null": "nx.double_edge_swap, nswap = 2 x edges, seed = draw",
         "null_draws": 10,
+    },
+    "football": {
+        "team": fb.CONFIG["team"],
+        "window": fb.CONFIG["window"],
+        "chain": "row i = player i's completed passes to each teammate, as shares",
+        "groupings": "roles (side x line) and lines from starting positions, as the football "
+        "entry; greedy search with any merge",
+        "random_groupings": 100,
+        "null": "markov.configuration_counts (passes made and received kept, no self-passes)",
+        "null_draws": 500,
+        "null_greedy_draws": 100,
+        "summary": "season values are medians over matches",
     },
 }
 
@@ -282,6 +298,92 @@ def compute_email(g: nx.Graph, config: dict[str, Any] = CONFIG) -> list[Row]:
     return rows
 
 
+def compute_football(
+    matches: list[dict[str, Any]],
+    events: dict[int, list[dict[str, Any]]],
+    config: dict[str, Any] = CONFIG,
+) -> list[Row]:
+    """Rows for Arsenal's starting-XI passing chains: per match and season medians."""
+    cfg, rows = config["football"], []
+    add = adder(rows)
+    per_match: dict[str, list[float]] = defaultdict(list)
+    for m in sorted(matches, key=lambda m: m["match_date"]):
+        match = m["match_id"]
+        _, positions, counts, _ = fb.window_counts(events[match], cfg["team"])
+        w = mk.transition_matrix(counts)
+        ones = np.ones(len(w))
+        ei = mk.effective_information(w)
+        det, deg = mk.determinism_degeneracy(w)
+        rng = random.Random(config["seed"] + match)
+        null = []
+        for _ in range(cfg["null_draws"]):
+            wn = mk.transition_matrix(mk.configuration_counts(counts, rng))
+            null.append((mk.effective_information(wn), *mk.determinism_degeneracy(wn)))
+        null_arr = np.array(null)
+        null_greedy = [
+            mk.greedy_partition(wn, ones)[1] - mk.effective_information(wn)
+            for wn in (
+                mk.transition_matrix(mk.configuration_counts(counts, rng))
+                for _ in range(cfg["null_greedy_draws"])
+            )
+        ]
+        values = {
+            "passes": float(counts.sum()),
+            "ei": ei,
+            "effectiveness": mk.effectiveness(w),
+            "determinism": det,
+            "degeneracy": deg,
+            "null_ei": null_arr[:, 0].mean(),
+            "null_determinism": null_arr[:, 1].mean(),
+            "null_degeneracy": null_arr[:, 2].mean(),
+            "degeneracy_pct": float(np.mean(null_arr[:, 2] < deg)),
+            "ei_pct": float(np.mean(null_arr[:, 0] < ei)),
+            "null_ce_greedy": float(np.mean(null_greedy)),
+        }
+        partitions = {
+            "roles": mk.labels_to_partition([fb.role_of(p) for p in positions]),
+            "lines": mk.labels_to_partition([fb.line_of(p) for p in positions]),
+            "greedy": mk.greedy_partition(w, ones)[0],
+        }
+        for name, part in partitions.items():
+            macro = mk.macro_matrix(w, part, ones)
+            values[f"{name}_ei"] = mk.effective_information(macro)
+            values[f"{name}_ce"] = values[f"{name}_ei"] - ei
+            values[f"{name}_effectiveness"] = mk.effectiveness(macro)
+            values[f"{name}_groups"] = float(len(part))
+        rand = [
+            mk.effective_information(
+                mk.macro_matrix(w, mk.random_partition_like(partitions["roles"], len(w), rng), ones)
+            )
+            for _ in range(cfg["random_groupings"])
+        ]
+        values["roles_random_ei"] = float(np.mean(rand))
+        values["roles_beaten"] = float(np.mean(np.array(rand) < values["roles_ei"]))
+        for key, v in values.items():
+            add(f"match_{key}", v, network="football", match=match)
+            per_match[key].append(v)
+
+    med = {k: float(np.median(v)) for k, v in per_match.items()}
+    add("nodes", 11, "players", network="football")
+    add("matches", len(per_match["ei"]), "matches", network="football")
+    add("median_passes", med["passes"], "passes", network="football")
+    for key in ("ei", "effectiveness", "determinism", "degeneracy"):
+        add(f"micro_{key}", med[key], "bits" if key != "effectiveness" else None,
+            network="football")  # fmt: skip
+        if key != "effectiveness":
+            add(f"null_median_{key}", med[f"null_{key}"], "bits", network="football")
+    for name in ("roles", "lines", "greedy"):
+        dims = {"network": "football", "grouping": name}
+        add("grouping_ei", med[f"{name}_ei"], "bits", **dims)
+        add("grouping_ce", med[f"{name}_ce"], "bits", **dims)
+        add("grouping_effectiveness", med[f"{name}_effectiveness"], **dims)
+        add("grouping_groups", med[f"{name}_groups"], "macro-nodes", **dims)
+    roles = {"network": "football", "grouping": "roles"}
+    add("random_ei_mean", med["roles_random_ei"], "bits", **roles)
+    add("random_beaten", med["roles_beaten"], "fraction", **roles)
+    return rows
+
+
 def _dataset(client: Client, slug: str) -> dict[str, Any]:
     rows = (
         client.table("datasets").select("id, sha256, storage_path").eq("slug", slug).execute().data
@@ -321,6 +423,9 @@ def run(client: Client, *, allow_dirty: bool = False) -> int | None:
         log.info("email: macro-nodes and %d nulls", CONFIG["email"]["null_draws"])
         email = enron.load_graph(_download(client, datasets[EMAIL_SLUG]))
         results += compute_email(email, CONFIG)
+        log.info("football: %d nulls per match", CONFIG["football"]["null_draws"])
+        matches, events, _ = fb.load_season(client, datasets)
+        results += compute_football(matches, events, CONFIG)
         write_results(client, run_id, results)
     return run_id
 

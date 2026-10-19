@@ -11,10 +11,12 @@ import pytest
 from pipelines.common import markov as mk
 from pipelines.experiments.network_science import causal_emergence as ce
 from tests.test_pipelines_c_elegans import EDGES, GZ, META_GZ
+from tests.test_pipelines_football import EVENTS, MATCHES
 
 SMALL = copy.deepcopy(ce.CONFIG)
 SMALL["worm"].update(random_groupings=5, null_draws=2)
 SMALL["email"].update(random_groupings={"structural_equivalence": 3, "louvain": 3}, null_draws=2)
+SMALL["football"].update(random_groupings=3, null_draws=5, null_greedy_draws=2)
 
 # Two hubs joined by an edge, each with three one-contact addresses, plus a triangle on B.
 STARS = [("A", "B"), ("A", "a1"), ("A", "a2"), ("A", "a3"), ("B", "b1"), ("B", "b2"),
@@ -90,7 +92,24 @@ def test_compute_email_rows():
     assert len(values(rows, "null_largest_class")) == 2
 
 
-def test_run_links_all_three_datasets(monkeypatch):
+def test_compute_football_rows():
+    rows = ce.compute_football(MATCHES, {1: EVENTS}, SMALL)
+    assert values(rows, "matches", network="football") == [1]
+    ei = values(rows, "match_ei", match=1)[0]
+    det, deg = values(rows, "match_determinism", match=1)[0], values(rows, "match_degeneracy")[0]
+    assert det - deg == pytest.approx(ei)
+    assert values(rows, "micro_ei", network="football") == [pytest.approx(ei)]  # one match
+    for grouping in ("roles", "lines", "greedy"):
+        g_ei = values(rows, "grouping_ei", network="football", grouping=grouping)[0]
+        assert values(rows, "grouping_ce", network="football", grouping=grouping)[0] == (
+            pytest.approx(g_ei - ei)
+        )
+    assert values(rows, "grouping_groups", network="football", grouping="lines")[0] <= 4
+    assert 0 <= values(rows, "match_degeneracy_pct", match=1)[0] <= 1
+    assert len(values(rows, "random_beaten", network="football")) == 1
+
+
+def test_run_links_all_datasets(monkeypatch):
     client = MagicMock()
     blobs = {"snap/e.gz": GZ, "snap/m.gz": META_GZ, "snap/enron.gz": STARS_GZ}
     from pipelines.common.provenance import sha256_bytes
@@ -102,6 +121,12 @@ def test_run_links_all_three_datasets(monkeypatch):
     }
     for row in meta_rows.values():
         row["sha256"] = sha256_bytes(blobs[row["storage_path"].split("/", 1)[1]])
+    for i, slug in enumerate(ce.fb.CONFIG["datasets"], start=4):
+        meta_rows[slug] = {"id": i, "sha256": f"{i}" * 64, "storage_path": f"datasets/sb/{i}"}
+    loaded = {}
+    monkeypatch.setattr(
+        ce.fb, "load_season", lambda c, d: loaded.update(d) or (MATCHES, {1: EVENTS}, {})
+    )
     eq = client.table.return_value.select.return_value.eq
     eq.side_effect = lambda col, slug: MagicMock(**{"execute.return_value.data": [meta_rows[slug]]})
     client.storage.from_.return_value.download.side_effect = lambda p: blobs[p]
@@ -114,9 +139,11 @@ def test_run_links_all_three_datasets(monkeypatch):
     monkeypatch.setattr(ce, "tracked", lambda c, run_id: MagicMock())
     assert ce.run(client) == 11
     assert started["datasets"] == {r["id"]: r["sha256"] for r in meta_rows.values()}
+    assert set(ce.fb.CONFIG["datasets"]) <= set(loaded)
     assert {r["dims"]["network"] for r in written if "network" in r.get("dims", {})} == {
         "worm",
         "email",
+        "football",
     }
 
 

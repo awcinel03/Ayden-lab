@@ -705,7 +705,10 @@ bullets += [
     f"(effective information above the random versions), with fewer distinct links "
     f"({dens_below} matches) and more targeted individual passing ({ent_below} matches). "
     f"Reciprocity, by contrast, was what chance predicts in {rec_within} matches. I read "
-    "this as players having preferred partners, without that meaning give-and-go play.",
+    "this as players having preferred partners, without that meaning give-and-go play. "
+    "That specificity is determinism (each player's passes are focused), not low "
+    "redundancy: Arsenal's degeneracy is about what chance predicts (see the causal "
+    "emergence entry).",
     f"**Eleven players, not four lines.** Merging players into roles lost information in "
     f"{roles_neg:.0f} of {n_matches} matches, and merging into lines lost it in "
     f"{lines_neg:.0f}. Pooling the whole season, which removes most small-sample bias, "
@@ -745,6 +748,12 @@ if not pooled_scales.empty and {"where", "line", "one_group"} <= set(pooled_scal
         "think that sensitivity is itself worth reporting.",
     ]
 st.markdown("\n".join(f"- {b}" for b in bullets))
+follow_up = entry("causal-emergence-worm-vs-email")
+st.page_link(
+    follow_up.path,
+    label="Follow-up: Arsenal next to the worm and Enron, in causal-emergence terms",
+    icon=follow_up.icon,
+)
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
 theme = "dark" if st.context.theme.type == "dark" else "light"
