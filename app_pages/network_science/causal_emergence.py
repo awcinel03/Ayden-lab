@@ -18,6 +18,7 @@ CODE_PATHS = (
 # Categorical slots 1-2 (validated palette), one per network; gray for the null.
 BLUE, ORANGE, GRAY = "#2a78d6", "#eb6834", "#8a8a85"
 NETWORKS = {"worm": ("C. elegans", BLUE), "email": ("Enron email", ORANGE)}
+SHORT = {"worm": "Worm", "email": "Email"}
 GROUPINGS = {
     "roles": "Degree roles (integrator, relay, broadcaster)",
     "greedy_within_roles": "Greedy search, merges within a role",
@@ -120,25 +121,28 @@ def degeneracy_share(network: str, deg: float) -> float:
 st.header("Results")
 cols = st.columns(4)
 for col, network in zip(cols[:2], NETWORKS, strict=True):
-    name, _ = NETWORKS[network]
+    name = SHORT[network]
     ce = value("grouping_ce", network=network, grouping=BEST[network])
     null = null_values("null_ce", network, BEST[network])
     col.metric(
-        f"{name}: best macro-nodes",
+        f"{name}: emergence",
         f"{ce:+.2f} bits",
-        f"{null.mean():+.2f} in rewired networks" if len(null) else None,
+        f"rewired {null.mean():+.2f}" if len(null) else None,
         delta_color="off",
-        help="Causal emergence: EI of the best macro-scale found minus the micro EI.",
+        delta_arrow="off",
+        help="Causal emergence: EI of the best macro-nodes found minus the micro EI. "
+        "Below: the mean over rewired networks with the same degrees.",
     )
 for col, network in zip(cols[2:], NETWORKS, strict=True):
-    name, _ = NETWORKS[network]
+    name = SHORT[network]
     deg = value("micro_degeneracy", network=network)
     null = null_values("null_degeneracy", network)
     col.metric(
         f"{name}: degeneracy",
         f"{deg:.2f} bits",
-        f"{deg - null.mean():+.2f} vs rewired" if len(null) else None,
+        f"rewired {null.mean():.2f}" if len(null) else None,
         delta_color="off",
+        delta_arrow="off",
         help="How much different nodes send to the same places; EI = determinism − degeneracy.",
     )
 
@@ -283,7 +287,7 @@ with groupings:
         pd.DataFrame(table),
         hide_index=True,
         column_config={
-            "Macro-nodes": st.column_config.NumberColumn(format="%d"),
+            "Macro-nodes": st.column_config.NumberColumn(format="localized"),
             "EI": st.column_config.NumberColumn(format="%.3f"),
             "Causal emergence": st.column_config.NumberColumn(format="%+.3f"),
             "Effectiveness": st.column_config.NumberColumn(format="%.3f"),
@@ -378,8 +382,8 @@ with merges:
             )  # fmt: skip
             + f"\n- The largest group has {classes['value'].max():,.0f} addresses"
             + (f" (rewired: at most {null_largest.max():,.0f})." if len(null_largest) else ".")
-            + f"\n- {one} of the {len(classes)} largest groups are addresses with exactly one "
-            "contact, all writing to the same person."
+            + f"\n- In {one} of the {len(classes)} largest groups, every address has exactly one "
+            "contact, the same person for the whole group (SNAP does not say who wrote to whom)."
         )
         st.dataframe(
             classes.rename(
@@ -424,10 +428,10 @@ if len(worm_null):
 if len(email_null):
     bullets.append(
         f"**Clear causal emergence in email, from degeneracy.** Merging addresses with "
-        f"identical contacts gains {email_ce:+.3f} bits; in every rewired network the same "
-        f"merge gains at most {email_null.max():+.3f}. Enron's email network is far more "
-        "degenerate than its degrees require: thousands of one-contact addresses all write "
-        "to the same few people."
+        f"identical contacts gains {email_ce:+.3f} bits; in the rewired networks the same "
+        f"merge changes EI by {email_null.min():+.3f} to {email_null.max():+.3f}. Enron's "
+        "email network is far more degenerate than its degrees require: thousands of "
+        "addresses whose only contact is one of the same few people."
     )
 excess = {}
 for network in NETWORKS:
