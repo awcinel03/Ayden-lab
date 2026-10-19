@@ -173,18 +173,19 @@ ENTRIES: tuple[Entry, ...] = (
     ),
     Entry(
         slug="causal-emergence-worm-vs-email",
-        title="Causal emergence: worm vs email",
+        title="Causal emergence in three networks",
         category=Category.NETWORK_SCIENCE,
         type=EntryType.EXPERIMENT,
         path="app_pages/network_science/causal_emergence.py",
         summary=(
             "Do macro-nodes describe a network better than its individual nodes? Effective "
-            "information for the C. elegans connectome and the Enron email network, tested "
-            "against random groupings and rewired networks."
+            "information for the C. elegans connectome, the Enron email network and Arsenal's "
+            "passing, tested against random groupings and null networks."
         ),
         date=datetime.date(2026, 10, 19),
         tags=(
             "snap",
+            "statsbomb",
             "connectome",
             "markov-chains",
             "causal-emergence",
