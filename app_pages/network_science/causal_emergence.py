@@ -619,8 +619,9 @@ st.markdown(
     "- Arsenal's null is a configuration model for counted passes, and the worm's and "
     "email's are degree-preserving rewirings of links. They are analogous, not identical.\n"
     "- Macro-nodes average members' outputs evenly, matching EI's even intervention. "
-    "Weighting by how often the walk visits each node gave the same conclusions when I "
-    "explored this."
+    "For the worm and email, weighting by how often the walk visits each node gave the "
+    "same conclusions when I explored this; for Arsenal, the football entry's "
+    "pass-weighted version reaches the same answer (roles and lines lose information)."
 )
 
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
