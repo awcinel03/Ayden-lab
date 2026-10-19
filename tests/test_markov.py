@@ -90,3 +90,44 @@ def test_macro_keeps_zero_weight_absorbing_states():
     singletons = [[0], [1], [2]]
     assert np.allclose(mk.macro_matrix(w, singletons, weights), w)
     assert mk.causal_emergence(w, singletons, weights) == pytest.approx(0.0)
+
+
+def test_sparse_and_dense_agree():
+    import scipy.sparse as sp
+
+    counts = np.array([[0, 2, 1, 0], [1, 0, 0, 3], [0, 0, 0, 0], [2, 1, 1, 0]])
+    w = mk.transition_matrix(counts)
+    ws = sp.csr_matrix(w)
+    assert mk.effective_information(ws) == pytest.approx(mk.effective_information(w))
+    assert mk.effectiveness(ws) == pytest.approx(mk.effectiveness(w))
+    part, weights = [[0, 2], [1], [3]], np.array([1.0, 2.0, 0.0, 1.0])
+    macro = mk.macro_matrix(ws, part, weights)
+    assert sp.issparse(macro)
+    assert np.allclose(macro.toarray(), mk.macro_matrix(w, part, weights))
+
+
+def test_determinism_minus_degeneracy_is_ei():
+    third = 1 / 3
+    w = np.array([[third] * 3 + [0]] * 3 + [[0, 0, 0, 1]])
+    det, deg = mk.determinism_degeneracy(w)
+    assert det - deg == pytest.approx(mk.effective_information(w))
+    assert det == pytest.approx(2 - 0.75 * np.log2(3))  # log2 4 minus mean row entropy
+    assert mk.determinism_degeneracy(np.eye(4)[[1, 2, 3, 0]]) == pytest.approx((2.0, 0.0))
+
+
+def test_greedy_within_labels_only_merges_matching_nodes():
+    third = 1 / 3
+    w = np.array([[third] * 3 + [0]] * 3 + [[0, 0, 0, 1]])
+    groups, _ = mk.greedy_partition(w, np.ones(4), within=["a", "a", "b", "b"])
+    assert [0, 1] in groups and [2] in groups and [3] in groups
+
+
+def test_greedy_path_starts_at_singletons_and_merges_one_pair_per_step():
+    w = mk.transition_matrix(np.array([[0, 2, 1, 1], [1, 0, 2, 0], [0, 1, 0, 3], [2, 0, 1, 0]]))
+    path = mk.greedy_path(w, np.ones(4))
+    assert [len(p) for p, _ in path] == [4, 3, 2, 1]
+    assert path[0][1] == pytest.approx(mk.effective_information(w))
+    for partition, ei in path:
+        assert ei == pytest.approx(
+            mk.effective_information(mk.macro_matrix(w, partition, np.ones(4)))
+        )

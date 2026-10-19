@@ -477,4 +477,11 @@ bullets += [
 ]
 st.markdown("\n".join(f"- {b}" for b in bullets))
 
+follow_up = entry("causal-emergence-worm-vs-email")
+st.page_link(
+    follow_up.path,
+    label="Follow-up: do groups of neurons describe the worm better than single neurons?",
+    icon=follow_up.icon,
+)
+
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)

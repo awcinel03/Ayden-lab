@@ -377,4 +377,11 @@ st.markdown(
     "path connected everyone in principle."
 )
 
+follow_up = entry("causal-emergence-worm-vs-email")
+st.page_link(
+    follow_up.path,
+    label="Follow-up: do groups of addresses describe the network better than single addresses?",
+    icon=follow_up.icon,
+)
+
 provenance_footer(run, db.run_datasets(run.id), CODE_PATHS)
