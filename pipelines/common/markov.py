@@ -23,8 +23,10 @@ import random
 from collections.abc import Hashable, Sequence
 
 import numpy as np
+import scipy.sparse as sp
 
 Partition = Sequence[Sequence[int]]
+Matrix = np.ndarray | sp.sparray | sp.spmatrix
 
 
 def transition_matrix(counts: np.ndarray) -> np.ndarray:
@@ -40,42 +42,71 @@ def _entropy(p: np.ndarray) -> np.ndarray:
     return -(p * logs).sum(axis=-1)
 
 
-def effective_information(w: np.ndarray) -> float:
-    """EI in bits of a row-stochastic matrix, over the rows that have outputs."""
+def _ei_parts(w: Matrix) -> tuple[float, float, int]:
+    """``(H(<W_i>), <H(W_i)>, n)`` over the ``n`` rows that have outputs; dense or sparse."""
+    if sp.issparse(w):
+        w = sp.csr_matrix(w, dtype=float)
+        w.eliminate_zeros()
+        has = np.diff(w.indptr) > 0
+        n = int(has.sum())
+        if n == 0:
+            return 0.0, 0.0, 0
+        mean_row = np.asarray(w[has].sum(axis=0)).ravel() / n
+        terms = -w.data * np.log2(w.data)
+        row_h = np.add.reduceat(terms, w.indptr[:-1][has])
+        return float(_entropy(mean_row)), float(row_h.mean()), n
     w = np.asarray(w, dtype=float)
     rows = w[w.sum(axis=1) > 0]
     if len(rows) == 0:
-        return 0.0
-    return float(_entropy(rows.mean(axis=0)) - _entropy(rows).mean())
+        return 0.0, 0.0, 0
+    return float(_entropy(rows.mean(axis=0))), float(_entropy(rows).mean()), len(rows)
 
 
-def effectiveness(w: np.ndarray) -> float:
+def effective_information(w: Matrix) -> float:
+    """EI in bits of a row-stochastic matrix (dense or sparse), over the rows that have outputs."""
+    h_mean, mean_h, _ = _ei_parts(w)
+    return h_mean - mean_h
+
+
+def effectiveness(w: Matrix) -> float:
     """EI divided by its maximum, log2 of the number of nodes with outputs."""
-    n = int((w.sum(axis=1) > 0).sum())
-    return effective_information(w) / np.log2(n) if n > 1 else 0.0
+    h_mean, mean_h, n = _ei_parts(w)
+    return (h_mean - mean_h) / np.log2(n) if n > 1 else 0.0
 
 
-def macro_matrix(w: np.ndarray, partition: Partition, weights: np.ndarray) -> np.ndarray:
+def determinism_degeneracy(w: Matrix) -> tuple[float, float]:
+    """Klein & Hoel's two terms in bits, with ``EI = determinism - degeneracy``.
+
+    Determinism is ``log2 n - <H(W_i)>`` (how sharply each node's outputs are
+    focused); degeneracy is ``log2 n - H(<W_i>)`` (how much different nodes
+    send to the same places), both over the ``n`` nodes with outputs.
+    """
+    h_mean, mean_h, n = _ei_parts(w)
+    top = float(np.log2(n)) if n else 0.0
+    return top - mean_h, top - h_mean
+
+
+def macro_matrix(w: Matrix, partition: Partition, weights: np.ndarray) -> Matrix:
     """Macro-scale transition matrix for ``partition`` (groups of node indices).
 
     Row mu is the ``weights``-weighted average of its members' rows (uniform if
     the group's weights are all zero), summed over each target group's columns;
-    flows inside a group become self-loops.
+    flows inside a group become self-loops. Sparse in, sparse out.
     """
-    k = len(partition)
-    out = np.zeros((k, k))
-    for a, group in enumerate(partition):
-        g = list(group)
-        wts = weights[g]
-        if wts.sum() <= 0:  # e.g. end states that never pass: average members uniformly
-            wts = np.ones(len(g))
-        row = (wts[:, None] * w[g]).sum(axis=0) / wts.sum()
-        for b, target in enumerate(partition):
-            out[a, b] = row[list(target)].sum()
-    return out
+    k, n = len(partition), w.shape[0]
+    members = np.fromiter((i for g in partition for i in g), dtype=int)
+    group = np.repeat(np.arange(k), [len(g) for g in partition])
+    wts = np.asarray(weights, dtype=float)[members]
+    empty = np.bincount(group, weights=wts, minlength=k) <= 0
+    wts = np.where(empty[group], 1.0, wts)  # e.g. end states that never pass
+    share = wts / np.bincount(group, weights=wts, minlength=k)[group]
+    s = sp.csr_matrix((np.ones(len(members)), (members, group)), shape=(n, k))
+    p = sp.csr_matrix((share, (group, members)), shape=(k, n))
+    out = p @ w @ s
+    return sp.csr_matrix(out) if sp.issparse(w) else np.asarray(out)
 
 
-def causal_emergence(w: np.ndarray, partition: Partition, weights: np.ndarray) -> float:
+def causal_emergence(w: Matrix, partition: Partition, weights: np.ndarray) -> float:
     """EI(macro) - EI(micro) in bits; positive means the macro scale is more informative."""
     return effective_information(macro_matrix(w, partition, weights)) - effective_information(w)
 
@@ -94,35 +125,78 @@ def with_end_states(w: np.ndarray, ends: Sequence[int], *, absorbing: bool = Tru
     return out
 
 
-def greedy_partition(
-    w: np.ndarray, weights: np.ndarray, mergeable: Sequence[int] | None = None
-) -> tuple[list[list[int]], float]:
-    """Agglomerative search for a high-EI partition.
+def _merged(m: np.ndarray, size: np.ndarray, count: np.ndarray, a: int, b: int) -> np.ndarray:
+    """Macro matrix after merging groups ``a`` and ``b`` (appended last), from the current one.
 
-    From singletons, repeatedly merge the pair of groups whose merge gives the
-    highest macro EI, and return the best partition seen with its EI. Only
-    groups made of ``mergeable`` nodes (default: all) may merge. Greedy, so a
-    lower bound on the best possible macro EI.
+    Equals ``macro_matrix`` on the merged partition: rows combine by group
+    weight (by member count when both groups' weights are zero) and the two
+    columns add.
+    """
+    wa, wb = (size[a], size[b]) if size[a] + size[b] > 0 else (count[a], count[b])
+    keep = [i for i in range(len(m)) if i not in (a, b)]
+    rows = np.vstack([m[keep], (wa * m[a] + wb * m[b]) / (wa + wb)])
+    return np.column_stack([rows[:, keep], rows[:, a] + rows[:, b]])
+
+
+def greedy_path(
+    w: np.ndarray,
+    weights: np.ndarray,
+    mergeable: Sequence[int] | None = None,
+    within: Sequence[Hashable] | None = None,
+) -> list[tuple[list[list[int]], float]]:
+    """Every partition an agglomerative EI search visits, from singletons, with its macro EI.
+
+    Each step merges the pair of groups whose merge gives the highest macro EI.
+    Only groups made of ``mergeable`` nodes (default: all) may merge, and with
+    ``within`` (one label per node) only groups sharing a label. Ends when no
+    pair may merge.
     """
     allowed = set(range(len(w))) if mergeable is None else set(mergeable)
+    weights = np.asarray(weights, dtype=float)
     groups = [[i] for i in range(len(w))]
-    best_groups = [list(g) for g in groups]
-    best_ei = effective_information(macro_matrix(w, groups, weights))
+    m = np.asarray(macro_matrix(w, groups, weights))
+    size, count = weights.copy(), np.ones(len(w))
+    path = [([list(g) for g in groups], effective_information(m))]
     while len(groups) > 1:
-        candidates = []
+        best = None
         for a in range(len(groups)):
             for b in range(a + 1, len(groups)):
                 if not allowed.issuperset(groups[a] + groups[b]):
                     continue
-                merged = [g for i, g in enumerate(groups) if i not in (a, b)]
-                merged.append(groups[a] + groups[b])
-                candidates.append((effective_information(macro_matrix(w, merged, weights)), merged))
-        if not candidates:
+                if within is not None and within[groups[a][0]] != within[groups[b][0]]:
+                    continue
+                candidate = _merged(m, size, count, a, b)
+                ei = effective_information(candidate)
+                if best is None or ei > best[0]:
+                    best = (ei, a, b, candidate)
+        if best is None:
             break
-        ei, groups = max(candidates, key=lambda c: c[0])
+        ei, a, b, m = best
+        keep = [i for i in range(len(groups)) if i not in (a, b)]
+        groups = [groups[i] for i in keep] + [groups[a] + groups[b]]
+        size = np.append(size[keep], size[a] + size[b])
+        count = np.append(count[keep], count[a] + count[b])
+        path.append(([list(g) for g in groups], ei))
+    return path
+
+
+def greedy_partition(
+    w: np.ndarray,
+    weights: np.ndarray,
+    mergeable: Sequence[int] | None = None,
+    within: Sequence[Hashable] | None = None,
+) -> tuple[list[list[int]], float]:
+    """Agglomerative search for a high-EI partition (see ``greedy_path``).
+
+    Returns the best partition seen with its EI. Greedy, so a lower bound on
+    the best possible macro EI.
+    """
+    path = greedy_path(w, weights, mergeable, within)
+    best_groups, best_ei = path[0]
+    for groups, ei in path[1:]:
         if ei > best_ei + 1e-12:
-            best_ei, best_groups = ei, [sorted(g) for g in groups]
-    return sorted(best_groups), best_ei
+            best_groups, best_ei = groups, ei
+    return sorted(sorted(g) for g in best_groups), best_ei
 
 
 def random_partition_like(partition: Partition, n: int, rng: random.Random) -> list[list[int]]:
