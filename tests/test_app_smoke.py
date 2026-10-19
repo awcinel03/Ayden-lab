@@ -314,6 +314,35 @@ def test_football_page_renders_results(monkeypatch):
     assert not at.exception, at.exception
 
 
+def test_causal_emergence_page_renders_results(monkeypatch):
+    import networkx as nx
+
+    from lab import db
+    from pipelines.experiments.network_science import causal_emergence as ce
+    from tests.test_pipelines_c_elegans import EDGES
+    from tests.test_pipelines_causal_emergence import SMALL, STARS
+
+    worm = nx.DiGraph([(str(u), str(v)) for u, v in EDGES])
+    rows = ce.compute_worm(worm, {}, SMALL) + ce.compute_email(nx.Graph(STARS), SMALL)
+    run = db.Run(
+        id=5,
+        experiment_slug="causal-emergence-worm-vs-email",
+        started_at=datetime.datetime(2026, 10, 19, tzinfo=datetime.UTC),
+        finished_at=None,
+        config={"version": 1},
+        git_sha="0" * 40,
+    )
+    monkeypatch.setattr(db, "latest_run", lambda slug: run)
+    monkeypatch.setattr(db, "results", lambda run_id: pd.DataFrame(rows))
+    monkeypatch.setattr(db, "run_datasets", lambda run_id: [])
+
+    at = AppTest.from_file(APP).run()
+    at.switch_page("app_pages/network_science/causal_emergence.py").run()
+    assert not at.exception, at.exception
+    assert len(at.metric) == 4
+    assert any(h.value == "Takeaways" for h in at.header)
+
+
 def test_football_logo_assets_exist():
     root = Path(__file__).resolve().parent.parent / "lab" / "assets"
     for theme in ("light", "dark"):
