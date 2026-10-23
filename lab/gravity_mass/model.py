@@ -269,10 +269,11 @@ def participation_ratio(w: np.ndarray) -> float:
 
 
 # ---------- destinations, for mass sorting ----------
-def deep_basins(A: np.ndarray, target: np.ndarray) -> np.ndarray:
+def deep_basins(A: np.ndarray | sp.spmatrix, target: np.ndarray) -> np.ndarray:
     """Split `target` into deep basins: connected clusters of target nodes. Returns a basin
-    label 0..k-1 for each target node, in node order."""
-    _, labels = connected_components(sp.csr_matrix(A[np.ix_(target, target)] > 0), directed=False)
+    label 0..k-1 for each target node, in node order. Dense or sparse `A`."""
+    sub = sp.csr_matrix(A)[target][:, target]
+    _, labels = connected_components(sub > 0, directed=False)
     return labels
 
 
