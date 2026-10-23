@@ -195,6 +195,29 @@ ENTRIES: tuple[Entry, ...] = (
         icon=":material/hub:",
     ),
     Entry(
+        slug="gravity-mass-information-flow",
+        title="Gravity and Mass: How Heavy Information Moves",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.MODEL,
+        path="app_pages/network_science/gravity_mass.py",
+        summary=(
+            "A random walk where nodes have gravity and messages have mass. Heavy messages "
+            "climb toward high-gravity nodes but get trapped on local peaks, so there is a "
+            "best mass, set by how rough the landscape is. Explore it live, then see the "
+            "full runs on synthetic graphs and a mouse connectome."
+        ),
+        date=datetime.date(2026, 10, 23),
+        tags=(
+            "random-walks",
+            "hitting-time",
+            "connectome",
+            "contagion",
+            "effective-information",
+            "interactive",
+        ),
+        icon=":material/public:",
+    ),
+    Entry(
         slug="coral-heat-stress-forecast",
         title="Forecasting Great Barrier Reef heat stress",
         category=Category.MACHINE_LEARNING,

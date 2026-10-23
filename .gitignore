@@ -30,3 +30,7 @@ data/
 
 # Source material for ports (notebooks with review-text outputs, report drafts); local only
 sources/
+
+# Gravity-mass entry: small public data and precomputed results ship with the code (see DECISIONS)
+!lab/gravity_mass/data/
+!lab/gravity_mass/data/*.csv
