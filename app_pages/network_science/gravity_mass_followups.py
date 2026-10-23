@@ -13,10 +13,12 @@ from lab.ui import REPO_URL, empty_state, page_header
 ENTRY = entry("gravity-mass-follow-ups")
 GLASS_PATH = model.RESULTS_PATH.parent / "glass_results.json"
 SORTING_PATH = model.RESULTS_PATH.parent / "sorting_results.json"
+COARSE_PATH = model.RESULTS_PATH.parent / "coarse_results.json"
 CODE_PATHS = (
     "lab/gravity_mass/model.py",
     "pipelines/experiments/network_science/gravity_mass_glass.py",
     "pipelines/experiments/network_science/gravity_mass_sorting.py",
+    "pipelines/experiments/network_science/gravity_mass_coarse.py",
 )
 # Categorical slots 1-4 (validated palette); network sizes use one sequential blue ramp.
 BLUE, ORANGE, AQUA, PURPLE, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#8e5cd9", "#8a8a85"
@@ -28,6 +30,56 @@ SHORT = {
     "laplace": "Laplace",
 }
 SIZE_RAMP = ["#a9c9f2", "#6fa3e6", "#2a78d6", "#1a4f94"]
+
+
+@st.cache_data
+def coarse() -> dict | None:
+    """Raw follow-up C output, or None before the experiment has been run."""
+    return json.loads(COARSE_PATH.read_text()) if COARSE_PATH.exists() else None
+
+
+@st.cache_data
+def coarse_frame() -> pd.DataFrame:
+    """One row per setting, seed and mass, with causal emergence and effectiveness gains."""
+    res = coarse()
+    C = pd.DataFrame(
+        [
+            dict(
+                graph=r["graph"],
+                kind=r["kind"],
+                par=r["par"],
+                seed=r["seed"],
+                n=r["n"],
+                k=r["k"],
+                **x,
+            )
+            for r in res["runs"]
+            for x in r["rows"]
+        ]
+    )
+    C["ce"] = C["macro_ei"] - C["micro_ei"]
+    C["advantage"] = C["macro_ei"] - C["null_ei"]
+    log_k = np.log2(C["k"].where(C["k"] > 1))
+    C["eff_gain"] = C["macro_ei"] / log_k - C["micro_ei"] / np.log2(C["n"])
+    C["null_eff_gain"] = C["null_ei"] / log_k - C["micro_ei"] / np.log2(C["n"])
+    return C
+
+
+def coarse_crossings(C: pd.DataFrame) -> dict:
+    """How many settings' flow basins (and random groupings) overtake the nodes per state."""
+    first, null_crossed, total = [], 0, 0
+    for _, sub in C[C["k"] > 1].groupby(["graph", "kind", "par", "seed"]):
+        total += 1
+        up = sub[sub["eff_gain"] > 0]
+        if len(up):
+            first.append(up["lam"].min())
+        null_crossed += int((sub["null_eff_gain"] > 0).any())
+    return dict(
+        crossed=len(first),
+        total=total,
+        median=float(np.median(first)) if first else float("nan"),
+        null_crossed=null_crossed,
+    )
 
 
 @st.cache_data
@@ -608,11 +660,260 @@ with tab_social:
         "streamer's view count as well depth."
     )
 with tab_coarse:
-    st.header("Coarse-graining")
-    empty_state(
-        "Planned: does grouping nodes into watersheds (each node with the well it drains "
-        "into) raise effective information more for heavy messages than for light ones?"
-    )
+    st.header("Does coarse-graining help heavy messages?")
+    crs = coarse()
+    if crs is None:
+        empty_state("No results yet. Run the coarse-graining experiment to fill this section.")
+    else:
+        C = coarse_frame()
+        cl = np.array(crs["config"]["lams"])
+        cmouse = {m["field"]: m for m in crs["mouse"]}
+
+        st.subheader("The question")
+        st.write(
+            "The causal-emergence entry asked whether grouping nodes into *macro-nodes* gives "
+            "a more informative description of a random walk than the nodes themselves. Here "
+            "the walk is the gravity walk, and the macro-nodes come from the landscape. The "
+            "question is whether the same grouping becomes more informative as messages get "
+            "heavier."
+        )
+
+        st.subheader("How I measured it")
+        st.markdown(
+            "- **Flow basins:** in the heavy-mass limit every step goes to the deepest "
+            "neighbour. Following that rule from any node ends on a pair of nodes that are each "
+            "other's deepest neighbour, where a heavy message bounces. Each such pair, with "
+            "every node that flows into it, is one macro-node. The grouping depends only on "
+            "the landscape, so the same macro-nodes are scored at every mass.\n"
+            "- **Macro walk:** a macro-node's next step is the average of its members' next "
+            "steps, weighted by how much time the walk spends at each member, π(λ).\n"
+            "- **Effective information (EI)**, in bits, for the micro walk and the macro walk. "
+            "Strict *causal emergence* means macro EI is higher than micro EI.\n"
+            "- **Effectiveness:** EI divided by its maximum, log₂ of the number of states. It "
+            "compares scales of different sizes on the same 0–1 footing.\n"
+            f"- **Control:** {crs['config']['n_null']} random groupings with the same group "
+            "sizes, for each setting and mass.\n"
+            f"- **Settings:** BA and ER graphs (n = 1,000), the ρ dial at "
+            f"{', '.join(f'{p:g}' for p in crs['config']['fields']['rho'])} and heat kernel t = "
+            f"{', '.join(f'{p:g}' for p in crs['config']['fields']['heat'])}, with "
+            f"{crs['config']['seeds']} seeds each, plus the mouse connectome."
+        )
+
+        st.subheader("Flow basins beat random groupings, most at moderate mass")
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Barabási–Albert", "Erdős–Rényi"))
+        rho_colors = {0.0: BLUE, 0.5: ORANGE, 1.0: AQUA}
+        for col, gname in enumerate(("BA", "ER"), start=1):
+            for par, color in rho_colors.items():
+                sub = C[(C["graph"] == gname) & (C["kind"] == "rho") & (C["par"] == par)]
+                agg = sub.groupby("lam")[["micro_ei", "macro_ei", "null_ei"]].mean()
+                for metric, dash, label in (
+                    ("micro_ei", "dot", "nodes"),
+                    ("macro_ei", "solid", "flow basins"),
+                    ("null_ei", "dash", "random groups"),
+                ):
+                    fig.add_trace(
+                        go.Scatter(
+                            x=agg.index,
+                            y=agg[metric],
+                            mode="lines",
+                            name=f"ρ = {par:g}, {label}",
+                            legendgroup=f"{par}{label}",
+                            showlegend=col == 1,
+                            line=dict(color=color, dash=dash, width=2),
+                            hovertemplate=f"ρ = {par:g}, {label}<br>λ = %{{x}}<br>EI = "
+                            "%{y:.2f} bits<extra></extra>",
+                        ),
+                        row=1,
+                        col=col,
+                    )
+        fig.update_xaxes(title_text="mass λ")
+        fig.update_yaxes(title_text="EI (bits)", col=1)
+        fig.update_layout(height=440, legend=dict(orientation="h", y=-0.3))
+        st.plotly_chart(fig, key="coarse_ei", width="stretch", theme="streamlit")
+        adv = C[C["k"] > 1].groupby("lam")["advantage"].mean()
+        st.caption(
+            "Mean over seeds. Dotted: the micro walk. Solid: flow basins. Dashed: random "
+            "groupings of the same sizes. The gap between solid and dashed is what the "
+            "landscape's grouping adds. Averaged over all settings with more than one basin, "
+            f"it is {adv.iloc[0]:.2f} bits for massless messages (neighbours share a basin, so "
+            f"flow stays inside even without gravity), peaks at {adv.max():.2f} bits near "
+            f"λ = {adv.idxmax():g}, and is {adv.iloc[-1]:.2f} at λ = {cl[-1]:g}. When gravity "
+            "follows degree on BA (ρ = 1) the whole graph drains into one basin, so there is a "
+            "single macro-node and nothing to compare."
+        )
+
+        st.subheader("Strict causal emergence: no")
+        best_ce = C.groupby(["graph", "kind", "par", "seed"])["ce"].max()
+        multi = C[C["k"] > 1]
+        st.write(
+            "Macro EI never exceeds micro EI here: the closest any setting and mass comes is "
+            f"{-best_ce.max():.2f} bits short. The macro scale has far fewer states "
+            f"(median {int(multi.groupby(['graph', 'kind', 'par', 'seed'])['k'].first().median())} "
+            "flow basins against about 1,000 nodes), and EI is capped at log₂ of the number of "
+            "states, so coarse-graining loses more bits of capacity than it gains in sharpness."
+        )
+
+        st.subheader("Per state, the macro scale overtakes the micro scale")
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Barabási–Albert", "Erdős–Rényi"))
+        field_colors = {
+            ("rho", 0.0): BLUE,
+            ("rho", 0.25): "#5b93dd",
+            ("rho", 0.5): ORANGE,
+            ("rho", 0.75): "#f19a6d",
+            ("rho", 1.0): AQUA,
+            ("heat", 0.5): PURPLE,
+            ("heat", 2.0): "#b495e6",
+        }
+        for col, gname in enumerate(("BA", "ER"), start=1):
+            for (kind, par), color in field_colors.items():
+                sub = C[
+                    (C["graph"] == gname) & (C["kind"] == kind) & (C["par"] == par) & (C["k"] > 1)
+                ]
+                if sub.empty:
+                    continue
+                agg = sub.groupby("lam")[["eff_gain", "null_eff_gain"]].mean()
+                name = f"ρ = {par:g}" if kind == "rho" else f"heat t = {par:g}"
+                fig.add_trace(
+                    go.Scatter(
+                        x=agg.index,
+                        y=agg["eff_gain"],
+                        mode="lines",
+                        name=name,
+                        legendgroup=name,
+                        showlegend=col == 1,
+                        line=dict(color=color, width=2),
+                        hovertemplate=f"{name}<br>λ = %{{x}}<br>gain = %{{y:.3f}}<extra></extra>",
+                    ),
+                    row=1,
+                    col=col,
+                )
+            null = C[(C["graph"] == gname) & (C["k"] > 1)].groupby("lam")["null_eff_gain"].mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=null.index,
+                    y=null,
+                    mode="lines",
+                    name="random groups (all fields)",
+                    legendgroup="null",
+                    showlegend=col == 1,
+                    line=dict(color=GRAY, dash="dash", width=2),
+                    hovertemplate="random groups<br>λ = %{x}<br>gain = %{y:.3f}<extra></extra>",
+                ),
+                row=1,
+                col=col,
+            )
+            fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=1, col=col)
+        fig.update_xaxes(title_text="mass λ")
+        fig.update_yaxes(title_text="macro − micro effectiveness", col=1)
+        fig.update_layout(height=420, legend=dict(orientation="h", y=-0.3))
+        st.plotly_chart(fig, key="coarse_eff", width="stretch", theme="streamlit")
+        cross = coarse_crossings(C)
+        st.caption(
+            "Effectiveness is EI ÷ log₂(states), so 1 means every state determines a different "
+            "next state. Above 0, each flow basin carries more of its possible information than "
+            f"each node does. Flow basins overtake the nodes in {cross['crossed']} of "
+            f"{cross['total']} settings with more than one basin, at a median mass of "
+            f"λ = {cross['median']:g}. Random groupings of the same sizes overtake them in "
+            f"{cross['null_crossed']}, so the gain comes from the grouping, not from having "
+            "fewer states."
+        )
+
+        st.subheader("Why: determinism up, degeneracy gone")
+        rough = C[(C["graph"] == "BA") & (C["kind"] == "rho") & (C["par"] == 0.0)]
+        parts = rough.groupby("lam")[["micro_det", "micro_deg", "macro_det", "macro_deg"]].mean()
+        lam_lo, lam_hi = cl[0], cl[-1]
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "scale": ["nodes", "nodes", "flow basins", "flow basins"],
+                    "mass": [lam_lo, lam_hi, lam_lo, lam_hi],
+                    "determinism": [
+                        parts.loc[lam_lo, "micro_det"],
+                        parts.loc[lam_hi, "micro_det"],
+                        parts.loc[lam_lo, "macro_det"],
+                        parts.loc[lam_hi, "macro_det"],
+                    ],
+                    "degeneracy": [
+                        parts.loc[lam_lo, "micro_deg"],
+                        parts.loc[lam_hi, "micro_deg"],
+                        parts.loc[lam_lo, "macro_deg"],
+                        parts.loc[lam_hi, "macro_deg"],
+                    ],
+                }
+            ).assign(ei=lambda d: d["determinism"] - d["degeneracy"]),
+            hide_index=True,
+            column_config={
+                "scale": "Scale",
+                "mass": st.column_config.NumberColumn("Mass λ", format="%g"),
+                "determinism": st.column_config.NumberColumn("Determinism (bits)", format="%.2f"),
+                "degeneracy": st.column_config.NumberColumn("Degeneracy (bits)", format="%.2f"),
+                "ei": st.column_config.NumberColumn("EI (bits)", format="%.2f"),
+            },
+        )
+        st.caption(
+            "Rough BA fields (ρ = 0), mean over seeds. EI = determinism − degeneracy. Heavy "
+            "messages make each node's next step sharp, but many nodes then point at the same "
+            "few well bottoms (degeneracy). Grouping a basin into one macro-node turns that "
+            "shared destination into a self-loop: at λ = "
+            f"{lam_hi:g} a flow basin keeps "
+            f"{rough[rough['lam'] == lam_hi]['self_loop'].mean():.0%} of its flow on average."
+        )
+
+        st.subheader("The mouse brain")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    dict(
+                        field={
+                            "log volume": "Region volume (log)",
+                            "FA": "Fractional anisotropy",
+                        }.get(k, "Random (control)"),
+                        k=m["k"],
+                        micro0=m["rows"][0]["micro_ei"] / np.log2(m["n"]),
+                        macro0=m["rows"][0]["macro_ei"] / np.log2(m["k"]) if m["k"] > 1 else None,
+                        micro8=m["rows"][-1]["micro_ei"] / np.log2(m["n"]),
+                        macro8=m["rows"][-1]["macro_ei"] / np.log2(m["k"]) if m["k"] > 1 else None,
+                        adv8=m["rows"][-1]["macro_ei"] - m["rows"][-1]["null_ei"],
+                    )
+                    for k, m in cmouse.items()
+                ]
+            ),
+            hide_index=True,
+            column_config={
+                "field": "Gravity",
+                "k": st.column_config.NumberColumn("Flow basins", format="%d"),
+                "micro0": st.column_config.NumberColumn("Nodes, λ = 0", format="%.2f"),
+                "macro0": st.column_config.NumberColumn("Basins, λ = 0", format="%.2f"),
+                "micro8": st.column_config.NumberColumn(f"Nodes, λ = {cl[-1]:g}", format="%.2f"),
+                "macro8": st.column_config.NumberColumn(f"Basins, λ = {cl[-1]:g}", format="%.2f"),
+                "adv8": st.column_config.NumberColumn(
+                    f"Beats random by (bits, λ = {cl[-1]:g})", format="%.2f"
+                ),
+            },
+        )
+        st.caption(
+            "Effectiveness of each scale on the 332-region backbone. The node-to-region mapping "
+            "behind volume and FA is inferred, not documented."
+        )
+
+        st.subheader("What it means")
+        st.markdown(
+            "- **Strict causal emergence: no.** With about 1,000 nodes and tens of basins, the "
+            "macro walk always has less EI than the micro walk; the closest any setting "
+            f"comes is {-best_ce.max():.1f} bits short.\n"
+            "- **Per state, heavy messages are best described basin by basin.** Above "
+            f"λ ≈ {cross['median']:g} each flow basin is more effective than each node, in "
+            "every setting with more than one basin and on the mouse brain, and random "
+            "groupings never are. For "
+            "massless messages the node scale wins.\n"
+            "- **So the answer depends on the yardstick.** Counted in bits, coarse-graining "
+            "never pays. Counted per state, it starts to pay once messages are heavy enough to "
+            'follow the landscape, which is the version of "more informative for heavy '
+            'messages" that holds here.\n'
+            "- **Limits:** one grouping rule (flow basins). The greedy EI search used in the "
+            "causal-emergence entry is too slow at 1,000 nodes, so a better grouping may exist. "
+            "Mass only goes up to λ = 8."
+        )
 
 st.header("Code")
 st.markdown(" · ".join(f"[{p}]({REPO_URL}/blob/main/{p})" for p in CODE_PATHS))
