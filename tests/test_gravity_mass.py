@@ -123,3 +123,39 @@ def test_well_basins_end_in_wells(A):
 def test_participation_ratio_limits():
     assert model.participation_ratio([1, 1, 1, 1]) == pytest.approx(0.25)
     assert model.participation_ratio([5, 0, 0]) == 1.0
+
+
+def test_absorption_probabilities_match_monte_carlo(A):
+    g = model.rho_field(A, 0.0, seed=0)
+    T = model.target_of(g)
+    P = model.kernel(A, g, 2.0)
+    B = model.absorption_probabilities(P, T)
+    assert np.allclose(B.sum(1), 1.0, atol=1e-10)
+    lab = model.deep_basins(A, T)
+    start = 0
+    Bc = np.bincount(lab, weights=B[start], minlength=lab.max() + 1)
+    rng = np.random.default_rng(1)
+    cum = np.cumsum(P, axis=1)
+    s0 = np.flatnonzero(~T)[start]
+    hits = np.zeros(lab.max() + 1)
+    index_in_T = -np.ones(len(T), int)
+    index_in_T[T] = np.arange(T.sum())
+    walks = 4000
+    for _ in range(walks):
+        x = s0
+        while not T[x]:
+            x = min(np.searchsorted(cum[x], rng.random()), len(T) - 1)
+        hits[lab[index_in_T[x]]] += 1
+    p = hits / walks
+    se = np.sqrt(np.maximum(Bc * (1 - Bc), 1e-12) / walks)
+    assert np.all(np.abs(p - Bc) < 4 * se + 1e-3)
+
+
+def test_deep_basins_are_connected_clusters(A):
+    g = model.rho_field(A, 0.0, seed=0)
+    T = model.target_of(g)
+    lab = model.deep_basins(A, T)
+    sub = A[np.ix_(T, T)] > 0
+    i, j = np.nonzero(sub)
+    assert np.all(lab[i] == lab[j])  # linked target nodes share a basin
+    assert len(lab) == T.sum()
