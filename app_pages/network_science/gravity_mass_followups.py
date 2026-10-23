@@ -14,11 +14,13 @@ ENTRY = entry("gravity-mass-follow-ups")
 GLASS_PATH = model.RESULTS_PATH.parent / "glass_results.json"
 SORTING_PATH = model.RESULTS_PATH.parent / "sorting_results.json"
 COARSE_PATH = model.RESULTS_PATH.parent / "coarse_results.json"
+TWITCH_PATH = model.RESULTS_PATH.parent / "twitch_results.json"
 CODE_PATHS = (
     "lab/gravity_mass/model.py",
     "pipelines/experiments/network_science/gravity_mass_glass.py",
     "pipelines/experiments/network_science/gravity_mass_sorting.py",
     "pipelines/experiments/network_science/gravity_mass_coarse.py",
+    "pipelines/experiments/network_science/gravity_mass_twitch.py",
 )
 # Categorical slots 1-4 (validated palette); network sizes use one sequential blue ramp.
 BLUE, ORANGE, AQUA, PURPLE, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#8e5cd9", "#8a8a85"
@@ -30,6 +32,12 @@ SHORT = {
     "laplace": "Laplace",
 }
 SIZE_RAMP = ["#a9c9f2", "#6fa3e6", "#2a78d6", "#1a4f94"]
+
+
+@st.cache_data
+def twitch() -> dict | None:
+    """Raw follow-up D output, or None before the experiment has been run."""
+    return json.loads(TWITCH_PATH.read_text()) if TWITCH_PATH.exists() else None
 
 
 @st.cache_data
@@ -654,11 +662,325 @@ with tab_sort:
             "and the landscape's roughness change together and cannot be fully separated here."
         )
 with tab_social:
-    st.header("A social network")
-    empty_state(
-        "Planned: Twitch's mutual-friendship networks (Rozemberczki et al.), with each "
-        "streamer's view count as well depth."
-    )
+    st.header("A real social network: Twitch")
+    tw = twitch()
+    if tw is None:
+        empty_state("No results yet. Run the Twitch experiment to fill this section.")
+    else:
+        net, src = tw["network"], tw["source"]
+        tl = np.array(tw["config"]["lams"])
+        fields = tw["fields"]
+        real = {f["field"]: f for f in fields if f["field"] != "shuffled log views"}
+        shuf = [f for f in fields if f["field"] == "shuffled log views"]
+        views, age, deg = real["log views"], real["log account age"], real["log degree"]
+
+        def g0(f):
+            c = np.array(f["climbs"])
+            if len(c) < 10:
+                return float("nan")
+            u = np.median(c)
+            return float((c[c > u] - u).mean())
+
+        def shuf_range(key):
+            vals = [f[key] for f in shuf]
+            return min(vals), max(vals)
+
+        st.subheader("The network")
+        st.write(
+            f"Twitch's English-language streamers in May 2018: {net['n']:,} streamers joined "
+            f"by {net['edges']:,} mutual friendships (mean {net['mean_degree']:.1f} friends "
+            "each). The data was collected from Twitch's public API and published by "
+            "Rozemberczki, Allen and Sarkar. Streamers are identified only by numeric IDs, and "
+            "this page shows aggregates only."
+        )
+        st.caption(
+            f"Source: [{src['source']}]({src['source_url']}). Licence: {src['license']}. "
+            f"Cite: {src['citation']}"
+        )
+
+        st.subheader("Popularity as gravity")
+        st.markdown(
+            "- **log views:** a streamer's total views. Its correlation with log friend count "
+            f"is {net['corr_log_views_log_degree']:.2f}, so it sits in the middle of the ρ "
+            "dial.\n"
+            f"- **log account age:** correlation {net['corr_log_age_log_degree']:.2f} with log "
+            "friend count, near the bottom of the dial.\n"
+            "- **log degree:** friend count itself, the top of the dial (ρ = 1).\n"
+            f"- **Control: shuffled log views.** The same view counts dealt out to random "
+            f"streamers ({len(shuf)} shuffles). Everything about the values stays; only *who* "
+            "has them changes, so any difference from real views comes from where the popular "
+            "streamers sit in the friendship network."
+        )
+        rows = []
+        for name, f in [("log views", views), ("log account age", age), ("log degree", deg)]:
+            rows.append(
+                dict(
+                    field=name,
+                    trap=f["trap_share"],
+                    basins=f["n_basins"],
+                    lam_star=f"≥ {f['lam_star']:g}" if f["censored"] else f"{f['lam_star']:g}",
+                    h0=f["curve"][0]["h_mean"],
+                    hmin=min(c["h_mean"] for c in f["curve"]),
+                )
+            )
+        lo_t, hi_t = shuf_range("trap_share")
+        lo_b, hi_b = shuf_range("n_basins")
+        rows.append(
+            dict(
+                field="shuffled log views",
+                trap=float(np.mean([f["trap_share"] for f in shuf])),
+                basins=int(np.mean([f["n_basins"] for f in shuf])),
+                lam_star=", ".join(sorted({f"{f['lam_star']:g}" for f in shuf})),
+                h0=float(np.mean([f["curve"][0]["h_mean"] for f in shuf])),
+                hmin=float(np.mean([min(c["h_mean"] for c in f["curve"]) for f in shuf])),
+            )
+        )
+        st.dataframe(
+            pd.DataFrame(rows),
+            hide_index=True,
+            column_config={
+                "field": "Gravity",
+                "trap": st.column_config.NumberColumn("Trap share", format="percent"),
+                "basins": st.column_config.NumberColumn("Deep basins", format="%d"),
+                "lam_star": "Best mass λ*",
+                "h0": st.column_config.NumberColumn("Steps to T, massless", format="%.1f"),
+                "hmin": st.column_config.NumberColumn("Steps to T, best mass", format="%.1f"),
+            },
+        )
+        st.caption(
+            f"Real view counts make a much smoother landscape than the same counts shuffled: "
+            f"{views['trap_share']:.1%} of streamers are traps against {lo_t:.1%}–{hi_t:.1%}, and "
+            f"the top 10% form {views['n_basins']} separate deep basins against {lo_b}–{hi_b}. "
+            "Popular streamers are friends with each other, so the deepest wells join into "
+            "one large core. Shuffled rows are means over shuffles; best masses list each "
+            "shuffle's value."
+        )
+
+        st.subheader("The best mass")
+        fig = go.Figure()
+        for f in shuf:
+            fig.add_trace(
+                go.Scatter(
+                    x=tl,
+                    y=[c["h_mean"] for c in f["curve"]],
+                    mode="lines",
+                    line=dict(color=GRAY, width=1),
+                    opacity=0.6,
+                    name="shuffled views",
+                    legendgroup="shuf",
+                    showlegend=f is shuf[0],
+                    hovertemplate="shuffled<br>λ = %{x}<br>steps = %{y:.1f}<extra></extra>",
+                )
+            )
+        for name, f, color in (
+            ("log views", views, BLUE),
+            ("log account age", age, ORANGE),
+            ("log degree", deg, AQUA),
+        ):
+            fig.add_trace(
+                go.Scatter(
+                    x=tl,
+                    y=[c["h_mean"] for c in f["curve"]],
+                    mode="lines",
+                    name=name,
+                    line=dict(color=color, width=2.5),
+                    hovertemplate=f"{name}<br>λ = %{{x}}<br>steps = %{{y:.1f}}<extra></extra>",
+                )
+            )
+        fig.update_layout(
+            height=400,
+            xaxis_title="mass λ",
+            yaxis=dict(title="mean steps to reach T", type="log"),
+            legend=dict(orientation="h", y=-0.25),
+        )
+        st.plotly_chart(fig, key="tw_curve", width="stretch", theme="streamlit")
+        st.caption(
+            f"Views and account age give the same U shape as the synthetic graphs, with best "
+            f"masses of {views['lam_star']:g} and {age['lam_star']:g}, close to the shuffled "
+            "controls. Degree has no traps, so heavier keeps helping. Past the best mass, "
+            "hitting times explode: at λ = 8 a message takes "
+            f"{views['curve'][-1]['h_mean']:,.0f} steps on real views."
+        )
+
+        st.subheader("Condensation, sharper than on synthetic graphs")
+        fig = go.Figure()
+        for f in shuf:
+            fig.add_trace(
+                go.Scatter(
+                    x=tl,
+                    y=[c["y2"] for c in f["curve"]],
+                    mode="lines",
+                    line=dict(color=GRAY, width=1),
+                    opacity=0.6,
+                    name="shuffled views",
+                    legendgroup="shuf",
+                    showlegend=f is shuf[0],
+                    hovertemplate="shuffled<br>λ = %{x}<br>Y₂ = %{y:.3f}<extra></extra>",
+                )
+            )
+        for name, f, color in (("log views", views, BLUE), ("log account age", age, ORANGE)):
+            fig.add_trace(
+                go.Scatter(
+                    x=tl,
+                    y=[c["y2"] for c in f["curve"]],
+                    mode="lines",
+                    name=name,
+                    line=dict(color=color, width=2.5),
+                    hovertemplate=f"{name}<br>λ = %{{x}}<br>Y₂ = %{{y:.3f}}<extra></extra>",
+                )
+            )
+            fig.add_vline(x=1 / g0(f), line=dict(color=color, dash="dot"))
+        fig.update_layout(
+            height=400,
+            xaxis_title="mass λ",
+            yaxis_title="Y₂ (time held by the dominant basins)",
+            legend=dict(orientation="h", y=-0.25),
+        )
+        st.plotly_chart(fig, key="tw_y2", width="stretch", theme="streamlit")
+
+        def y2_at(f, lam):
+            return float(np.interp(lam, tl, [c["y2"] for c in f["curve"]]))
+
+        st.caption(
+            "Participation ratio of pre-arrival time over flow basins, as in the glass-transition "
+            "tab. Dotted lines mark the trap model's λ_c = 1/Γ₀ from each field's climbs: "
+            f"{1 / g0(views):.1f} for views and {1 / g0(age):.1f} for account age. On real views, "
+            f"Y₂ goes from {y2_at(views, 2):.2f} at λ = 2 to {y2_at(views, 6):.2f} at λ = 6: "
+            "nearly all the time before arrival sits in one basin. Shuffled views condense too, "
+            f"but how far varies a lot between shuffles ({min(y2_at(f, 8) for f in shuf):.2f}–"
+            f"{max(y2_at(f, 8) for f in shuf):.2f} at λ = 8), as expected when a few rare deep "
+            "traps dominate. With one network there is no finite-size test here."
+        )
+
+        st.subheader("No sorting: every road leads to the core")
+        srows = []
+        for name, f in [("log views", views), ("log account age", age), ("log degree", deg)]:
+            srows.append(
+                dict(
+                    field=name,
+                    basins=f["n_basins"],
+                    dest=f["dest_sorting"],
+                    tv=f["tv_0_8"],
+                    deep0=f["per_mass"][0]["deepest_basin"],
+                    deep8=f["per_mass"][-1]["deepest_basin"],
+                    settle=f["settle_sorting"],
+                )
+            )
+        srows.append(
+            dict(
+                field="shuffled log views",
+                basins=int(np.mean([f["n_basins"] for f in shuf])),
+                dest=float(np.mean([f["dest_sorting"] for f in shuf])),
+                tv=float(np.mean([f["tv_0_8"] for f in shuf])),
+                deep0=float(np.mean([f["per_mass"][0]["deepest_basin"] for f in shuf])),
+                deep8=float(np.mean([f["per_mass"][-1]["deepest_basin"] for f in shuf])),
+                settle=float(np.mean([f["settle_sorting"] for f in shuf])),
+            )
+        )
+        st.dataframe(
+            pd.DataFrame(srows),
+            hide_index=True,
+            column_config={
+                "field": "Gravity",
+                "basins": st.column_config.NumberColumn("Deep basins", format="%d"),
+                "dest": st.column_config.NumberColumn("Destination sorting", format="%.3f"),
+                "tv": st.column_config.NumberColumn(
+                    "Light vs heavy: different basin", format="percent"
+                ),
+                "deep0": st.column_config.NumberColumn(
+                    "Reach deepest basin, λ = 0", format="percent"
+                ),
+                "deep8": st.column_config.NumberColumn(
+                    "Reach deepest basin, λ = 8", format="percent"
+                ),
+                "settle": st.column_config.NumberColumn("Settling sorting", format="%.3f"),
+            },
+        )
+        st.caption(
+            f"On real views, {views['per_mass'][0]['deepest_basin']:.0%} of massless and "
+            f"{views['per_mass'][-1]['deepest_basin']:.0%} of λ = 8 messages first reach the "
+            "basin holding the most-viewed streamer, so a message's mass hardly changes where "
+            f"it goes (sorting {views['dest_sorting']:.3f}, against "
+            f"{shuf_range('dest_sorting')[0]:.2f}–{shuf_range('dest_sorting')[1]:.2f} for "
+            "shuffled views). This matches the sorting tab's rule: sorting needs several "
+            "separate deep basins, and a well-connected elite leaves one. Where messages "
+            "settle in the long run still sorts by mass. For shuffled views, whether the "
+            "most-viewed streamer lands in the big cluster varies between shuffles, so that "
+            "mean is noisy."
+        )
+
+        st.subheader("Coarse-graining")
+        fig = go.Figure()
+        for f in shuf:
+            k = f["n_flow_basins"]
+            fig.add_trace(
+                go.Scatter(
+                    x=[c["lam"] for c in f["coarse"]],
+                    y=[
+                        c["macro_ei"] / np.log2(k) - c["micro_ei"] / np.log2(net["n"])
+                        for c in f["coarse"]
+                    ],
+                    mode="lines",
+                    line=dict(color=GRAY, width=1),
+                    opacity=0.6,
+                    name="shuffled views",
+                    legendgroup="shuf",
+                    showlegend=f is shuf[0],
+                    hovertemplate="shuffled<br>λ = %{x}<br>gain = %{y:.3f}<extra></extra>",
+                )
+            )
+        for name, f, color in (
+            ("log views", views, BLUE),
+            ("log account age", age, ORANGE),
+            ("log degree", deg, AQUA),
+        ):
+            k = f["n_flow_basins"]
+            fig.add_trace(
+                go.Scatter(
+                    x=[c["lam"] for c in f["coarse"]],
+                    y=[
+                        c["macro_ei"] / np.log2(k) - c["micro_ei"] / np.log2(net["n"])
+                        for c in f["coarse"]
+                    ],
+                    mode="lines+markers",
+                    name=f"{name} ({k} flow basins)",
+                    line=dict(color=color, width=2.5),
+                    hovertemplate=f"{name}<br>λ = %{{x}}<br>gain = %{{y:.3f}}<extra></extra>",
+                )
+            )
+        fig.add_hline(y=0, line=dict(color=GRAY, width=1))
+        fig.update_layout(
+            height=380,
+            xaxis_title="mass λ",
+            yaxis_title="macro − micro effectiveness",
+            legend=dict(orientation="h", y=-0.3),
+        )
+        st.plotly_chart(fig, key="tw_coarse", width="stretch", theme="streamlit")
+        best_ce = max(c["macro_ei"] - c["micro_ei"] for f in fields for c in f["coarse"])
+        adv_v = [c["macro_ei"] - c["null_ei"] for c in views["coarse"]]
+        st.caption(
+            "As on the synthetic graphs, the basin scale overtakes the streamer scale per state "
+            "once messages are heavy (above 0), and strict causal emergence never appears (the "
+            f"closest is {-best_ce:.1f} bits short). Real views' {views['n_flow_basins']} flow "
+            f"basins beat random groupings of the same sizes by {adv_v[0]:.1f} bits at λ = 0 "
+            f"and {adv_v[-1]:.1f} at λ = {views['coarse'][-1]['lam']:g}."
+        )
+
+        st.subheader("What it means")
+        st.markdown(
+            "- **Real popularity is arranged, not random.** Popular streamers befriend each "
+            "other, so the landscape has a few large, connected deep basins instead of hundreds "
+            "of scattered ones. That one fact drives most of what follows.\n"
+            "- **The best mass and the glassy slowdown carry over.** The U-shaped hitting time "
+            "appears with a best mass near 2, and heavy messages condense into one basin almost "
+            "completely, with the rise starting just above the trap model's λ_c.\n"
+            "- **Mass sorting does not.** With one dominant core, almost every message, light "
+            "or heavy, ends up in the same place. Shuffling who is popular brings sorting back.\n"
+            "- **Coarse-graining behaves as on synthetic graphs:** per state the basin scale "
+            "wins for heavy messages, but never in strict bits.\n"
+            "- **Limits:** one network, one snapshot (May 2018), English-language streamers "
+            "only. View counts are lifetime totals, which also grow with account age."
+        )
 with tab_coarse:
     st.header("Does coarse-graining help heavy messages?")
     crs = coarse()
