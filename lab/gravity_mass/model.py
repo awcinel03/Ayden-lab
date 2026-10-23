@@ -13,6 +13,8 @@ from pathlib import Path
 
 import networkx as nx
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import splu
 from scipy.special import logsumexp
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -196,6 +198,54 @@ def knn_backbone(A: np.ndarray, k: int) -> np.ndarray:
     keep[np.repeat(np.arange(len(A)), k), top.ravel()] = True
     keep |= keep.T
     return np.where(keep, A, 0.0)
+
+
+# ---------- sparse versions, for networks beyond the dense limit (n > ~2,000) ----------
+def kernel_sparse(A: sp.spmatrix, g: np.ndarray, lam: float) -> sp.csr_matrix:
+    """Sparse P(lam); same values as `kernel`, computed row by row with log-sum-exp."""
+    A = sp.csr_matrix(A)
+    A.sort_indices()
+    counts = np.diff(A.indptr)
+    logits = lam * g[A.indices] + np.log(A.data)
+    shift = np.repeat(np.maximum.reduceat(logits, A.indptr[:-1]), counts)
+    w = np.exp(logits - shift)
+    w /= np.repeat(np.add.reduceat(w, A.indptr[:-1]), counts)
+    return sp.csr_matrix((w, A.indices.copy(), A.indptr.copy()), shape=A.shape)
+
+
+def hitting_and_occupancy(P: sp.spmatrix, target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per-start hitting times to `target` and mean occupancy before arrival.
+
+    With Q the nodes outside `target` and N = (I - P_QQ)^-1, returns h = N 1 (steps to reach
+    the target from each start in Q) and o = 1^T N / |Q| (expected steps spent at each node
+    of Q, averaged over uniform starts in Q). Both are indexed over Q; o.sum() == h.mean().
+    """
+    Q = ~target
+    P = sp.csr_matrix(P)
+    lu = splu((sp.identity(int(Q.sum()), format="csc") - P[Q][:, Q]).tocsc())
+    ones = np.ones(int(Q.sum()))
+    return lu.solve(ones), lu.solve(ones / Q.sum(), trans="T")
+
+
+def well_basins(A: sp.spmatrix, g: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Label each node with the local well it drains to by always stepping to its deepest
+    neighbour while that neighbour is deeper. Nodes in `target` label themselves."""
+    A = sp.csr_matrix(A)
+    nxt = np.arange(len(g))
+    for i in np.flatnonzero(~target):
+        nb = A.indices[A.indptr[i] : A.indptr[i + 1]]
+        j = nb[np.argmax(g[nb])]
+        if g[j] > g[i]:
+            nxt[i] = j
+    while not np.array_equal(nxt, nxt[nxt]):
+        nxt = nxt[nxt]
+    return nxt
+
+
+def participation_ratio(w: np.ndarray) -> float:
+    """Y2 = sum of squared shares: about 1/(number of equal parts), 1 if one part has all."""
+    w = np.asarray(w, float) / np.sum(w)
+    return float((w**2).sum())
 
 
 def main() -> None:
