@@ -159,3 +159,20 @@ def test_deep_basins_are_connected_clusters(A):
     i, j = np.nonzero(sub)
     assert np.all(lab[i] == lab[j])  # linked target nodes share a basin
     assert len(lab) == T.sum()
+
+
+def test_flow_basins_end_on_mutual_best_pairs(A):
+    g = model.rho_field(A, 0.0, seed=0)
+    none = np.zeros(len(g), bool)
+    lab = model.flow_basins(A, g, none)
+    best = np.where(A > 0, g[None, :], -np.inf).argmax(axis=1)
+    for r in np.unique(lab):
+        assert best[best[r]] == r and r < best[r]  # each label is the smaller of a 2-cycle
+    # following the deepest-neighbour map from any node lands in its own basin's pair
+    x = np.arange(len(g))
+    for _ in range(2 * len(g)):
+        x = best[x]
+    assert np.array_equal(np.minimum(x, best[x]), lab)
+    T = model.target_of(g)
+    lab_t = model.flow_basins(A, g, T)
+    assert np.all(lab_t[T] == np.flatnonzero(T))

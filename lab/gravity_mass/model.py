@@ -243,6 +243,25 @@ def well_basins(A: sp.spmatrix, g: np.ndarray, target: np.ndarray) -> np.ndarray
     return nxt
 
 
+def flow_basins(A: sp.spmatrix, g: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Basins of the heavy-mass limit, where every step goes to the deepest neighbour.
+
+    Following that map from any node ends on a pair of mutual deepest neighbours (depth
+    rises every two steps, so the only cycles are 2-cycles), or on a node of `target`, which
+    absorbs. Each node is labelled with the smaller index of the pair it ends on, or with
+    the target node itself.
+    """
+    A = sp.csr_matrix(A)
+    f = np.arange(len(g))
+    for i in np.flatnonzero(~target):
+        nb = A.indices[A.indptr[i] : A.indptr[i + 1]]
+        f[i] = nb[np.argmax(g[nb])]
+    x = f.copy()
+    for _ in range(int(np.ceil(np.log2(len(g)))) + 1):  # x = f^(2^k), 2^k > any path length
+        x = x[x]
+    return np.minimum(x, f[x])
+
+
 def participation_ratio(w: np.ndarray) -> float:
     """Y2 = sum of squared shares: about 1/(number of equal parts), 1 if one part has all."""
     w = np.asarray(w, float) / np.sum(w)
