@@ -218,6 +218,20 @@ ENTRIES: tuple[Entry, ...] = (
         icon=":material/public:",
     ),
     Entry(
+        slug="gravity-mass-follow-ups",
+        title="Gravity and Mass: Follow-ups",
+        category=Category.NETWORK_SCIENCE,
+        type=EntryType.EXPERIMENT,
+        path="app_pages/network_science/gravity_mass_followups.py",
+        summary=(
+            "Four open questions from Gravity and Mass: a glass-like transition in mass, "
+            "whether messages sort by mass, a real social network, and coarse-graining."
+        ),
+        date=datetime.date(2026, 10, 23),
+        tags=("random-walks", "trap-model", "finite-size-scaling", "effective-information"),
+        icon=":material/orbit:",
+    ),
+    Entry(
         slug="coral-heat-stress-forecast",
         title="Forecasting Great Barrier Reef heat stress",
         category=Category.MACHINE_LEARNING,

@@ -108,13 +108,22 @@ def run_one(kind: str, n: int, seed: int, lams: list[float]) -> dict:
     )
 
 
+def compact(run: dict, digits: int = 5) -> dict:
+    """Round per-mass values to `digits` significant figures so the file stays under 1 MB."""
+    for row in run["rows"]:
+        for k, v in row.items():
+            if k != "lam":
+                row[k] = float(f"{v:.{digits}g}")
+    return run
+
+
 def main():
     out = {"config": CONFIG, "git_sha": git_sha(), "field_labels": FIELD_LABELS, "runs": []}
     for kind in CONFIG["fields"]:
         for n in CONFIG["sizes"]:
             t0 = time.time()
             for seed in range(CONFIG["seeds"][str(n)]):
-                out["runs"].append(run_one(kind, n, seed, CONFIG["lams"]))
+                out["runs"].append(compact(run_one(kind, n, seed, CONFIG["lams"])))
             print(f"{kind} n={n}: {time.time() - t0:.0f}s", flush=True)
     OUT.write_text(json.dumps(out, separators=(",", ":")))
 
