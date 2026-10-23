@@ -176,3 +176,17 @@ def test_flow_basins_end_on_mutual_best_pairs(A):
     T = model.target_of(g)
     lab_t = model.flow_basins(A, g, T)
     assert np.all(lab_t[T] == np.flatnonzero(T))
+
+
+def test_sparse_barrier_climbs_match_dense(A):
+    import scipy.sparse as sp
+
+    from pipelines.experiments.network_science.gravity_mass import barrier_prediction
+    from pipelines.experiments.network_science.gravity_mass_twitch import barrier_climbs_sparse
+
+    g = model.rho_field(A, 0.0, seed=0)
+    T = model.target_of(g)
+    _, depth = barrier_prediction(A, g, T)
+    nbr_max = np.where(A > 0, g[None, :], -np.inf).max(axis=1)
+    dense = depth[(g > nbr_max) & ~T]
+    assert np.allclose(barrier_climbs_sparse(sp.csr_matrix(A), g, T), dense, atol=1e-12)
