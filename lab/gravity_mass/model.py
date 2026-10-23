@@ -90,7 +90,7 @@ def spectral_gap(P: np.ndarray, pi: np.ndarray) -> float:
 
 
 def local_max_fraction(A: np.ndarray, g: np.ndarray, target: np.ndarray) -> float:
-    """Trap share: fraction of nodes that are strict local maxima of g outside `target`."""
+    """Trap share: fraction of nodes that are local wells (strict local maxima of g) outside T."""
     nbr_max = np.where(A > 0, g[None, :], -np.inf).max(axis=1)
     is_max = g > nbr_max
     return (is_max & ~target).sum() / len(g)

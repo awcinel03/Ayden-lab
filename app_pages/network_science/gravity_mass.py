@@ -83,12 +83,12 @@ page_header(ENTRY)
 
 st.header("The idea")
 st.write(
-    "Every node in a network has a *gravity* g, and every message has a *mass* m. A "
-    "massless message does a simple random walk; a heavy one is pulled toward "
-    "high-gravity neighbours, with the pull set by λ = βm. Gravity is standardized to mean 0 "
-    "and variance 1, and the destination T is the top 10% of nodes by g. The question is how "
-    "fast messages of different mass reach T, and why there is a best mass: heavy messages "
-    "climb quickly but get stuck on local peaks of g outside T (*traps*)."
+    "Every node in a network is a gravity well with depth g, and every message has a *mass* "
+    "m. A massless message does a simple random walk; a heavy one falls toward deeper "
+    "neighbouring wells, with the pull set by λ = βm. Depth is standardized to mean 0 and "
+    "variance 1, and the destination T is the deepest 10% of wells. The question is how fast "
+    "messages of different mass reach T, and why there is a best mass: heavy messages fall "
+    "quickly but settle in shallow local wells outside T (*traps*) and can't climb out."
 )
 st.latex(
     r"P_{ij}(\lambda) = \frac{A_{ij}\,e^{\lambda g_j}}{\sum_k A_{ik}\,e^{\lambda g_k}},"
@@ -135,7 +135,7 @@ with st.sidebar:
             4.0,
             0.5,
             step=0.25,
-            help="g = z(e^{−tL} ξ): larger t gives a smoother field with fewer traps.",
+            help="g = z(e^{−tL} ξ): larger t gives smoother basins with fewer traps.",
             key="gm_t",
         )
     else:
@@ -173,7 +173,7 @@ with st.container(horizontal=True):
     st.metric(
         "Trap share",
         f"{model.local_max_fraction(A, g, T):.1%}",
-        help="Nodes that are local maxima of g but not in T.",
+        help="Local wells: nodes deeper than all their neighbours but not in T.",
         border=True,
     )
     st.metric(
@@ -235,8 +235,8 @@ with net_col:
     )
     st.plotly_chart(fig, key="gm_network", width="stretch", theme="streamlit")
     st.caption(
-        f"{len(g)} nodes. Colour is gravity g, size is the stationary probability π(λ) at "
-        f"λ = {lam:g}, and the {T.sum()} outlined nodes are the target set T."
+        f"{len(g)} nodes. Colour is well depth g (red is deep), size is the stationary "
+        f"probability π(λ) at λ = {lam:g}, and the {T.sum()} outlined nodes are the target set T."
     )
 with curve_col:
     fig = go.Figure(
@@ -314,7 +314,7 @@ for (gname, kind), sub in A_rows.groupby(["graph", "kind"]):
     )
 fig.update_layout(
     height=420,
-    xaxis=dict(title="trap share (local maxima of g outside T)", tickformat=".0%"),
+    xaxis=dict(title="trap share (local wells outside T)", tickformat=".0%"),
     yaxis_title="best mass λ*",
     legend=dict(orientation="h", y=-0.2),
 )
@@ -329,14 +329,15 @@ st.caption(
     f"{uncensored['lam_star'].max():g} down to {uncensored['lam_star'].min():g}."
 )
 
-st.subheader("The barrier sets the cost of being too heavy")
+st.subheader("The climb out sets the cost of being too heavy")
 B_rows = pd.DataFrame(res["B"])
 B_rows["rel_err"] = (B_rows["slope"] - B_rows["gamma_pred"]).abs() / B_rows["gamma_pred"]
 st.write(
     "At large λ the walk behaves like a particle escaping a potential well: the log hitting "
-    "time grows linearly in λ, with slope set by the deepest trap (Arrhenius' law). The "
-    "predicted barrier Γ* is the largest drop, over nodes outside T, from a node's best edge "
-    "to the best path out of it, on the edge landscape g_u + g_v."
+    "time grows linearly in λ, with slope set by the deepest trap (Arrhenius' law). Depth "
+    "lives on edges, as g_u + g_v. A trap's floor is its deepest edge, and its rim is the "
+    "shallowest point on the best route to T. The predicted climb Γ* is the largest "
+    "floor-to-rim climb over all nodes outside T."
 )
 lo = min(B_rows["gamma_pred"].min(), B_rows["slope"].min()) * 0.9
 hi = max(B_rows["gamma_pred"].max(), B_rows["slope"].max()) * 1.05
@@ -367,7 +368,7 @@ for gname, sub in B_rows.groupby("graph"):
     )
 fig.update_layout(
     height=400,
-    xaxis_title="predicted barrier Γ*",
+    xaxis_title="predicted climb Γ*",
     yaxis_title="fitted slope of log hitting time (λ = 10–12)",
     legend=dict(orientation="h", y=-0.2),
 )
