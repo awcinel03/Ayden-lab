@@ -93,3 +93,33 @@ def test_page_controls_render():
         assert not at.exception, (key, value, at.exception)
     assert widget("gm_field").value == "rho"
     assert len(at.metric) == 4
+
+
+def test_sparse_kernel_and_hitting_match_dense(A):
+    import scipy.sparse as sp
+
+    g = model.rho_field(A, 0.0, seed=0)
+    T = model.target_of(g)
+    for lam in (0.0, 3.0, 8.0):
+        P = model.kernel(A, g, lam)
+        Ps = model.kernel_sparse(sp.csr_matrix(A), g, lam)
+        assert np.abs(Ps.toarray() - P).max() < TOL
+        h, o = model.hitting_and_occupancy(Ps, T)
+        dense = model.mfpt_to_set(P, T)
+        assert abs(h.mean() - dense) / dense < 1e-9
+        assert abs(o.sum() - h.mean()) / h.mean() < 1e-9  # occupancy adds up to hitting time
+
+
+def test_well_basins_end_in_wells(A):
+    g = model.rho_field(A, 0.0, seed=0)
+    T = model.target_of(g)
+    lab = model.well_basins(A, g, T)
+    nbr_max = np.where(A > 0, g[None, :], -np.inf).max(axis=1)
+    ends = np.unique(lab)
+    assert np.all(T[ends] | (g[ends] > nbr_max[ends]))  # every basin is T or a local well
+    assert np.all(lab[T] == np.flatnonzero(T))
+
+
+def test_participation_ratio_limits():
+    assert model.participation_ratio([1, 1, 1, 1]) == pytest.approx(0.25)
+    assert model.participation_ratio([5, 0, 0]) == 1.0
