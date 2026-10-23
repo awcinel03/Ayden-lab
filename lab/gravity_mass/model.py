@@ -14,6 +14,7 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 import scipy.sparse as sp
+from scipy.sparse.csgraph import connected_components
 from scipy.sparse.linalg import splu
 from scipy.special import logsumexp
 
@@ -246,6 +247,22 @@ def participation_ratio(w: np.ndarray) -> float:
     """Y2 = sum of squared shares: about 1/(number of equal parts), 1 if one part has all."""
     w = np.asarray(w, float) / np.sum(w)
     return float((w**2).sum())
+
+
+# ---------- destinations, for mass sorting ----------
+def deep_basins(A: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Split `target` into deep basins: connected clusters of target nodes. Returns a basin
+    label 0..k-1 for each target node, in node order."""
+    _, labels = connected_components(sp.csr_matrix(A[np.ix_(target, target)] > 0), directed=False)
+    return labels
+
+
+def absorption_probabilities(P: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """B[s, t]: probability that a walk from start s (outside `target`) first enters `target`
+    at node t. Rows run over the nodes outside `target`, columns over target nodes; rows sum
+    to 1."""
+    Q = ~target
+    return np.linalg.solve(np.eye(Q.sum()) - P[np.ix_(Q, Q)], P[np.ix_(Q, target)])
 
 
 def main() -> None:

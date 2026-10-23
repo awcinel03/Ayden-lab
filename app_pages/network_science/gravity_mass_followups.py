@@ -12,9 +12,11 @@ from lab.ui import REPO_URL, empty_state, page_header
 
 ENTRY = entry("gravity-mass-follow-ups")
 GLASS_PATH = model.RESULTS_PATH.parent / "glass_results.json"
+SORTING_PATH = model.RESULTS_PATH.parent / "sorting_results.json"
 CODE_PATHS = (
     "lab/gravity_mass/model.py",
     "pipelines/experiments/network_science/gravity_mass_glass.py",
+    "pipelines/experiments/network_science/gravity_mass_sorting.py",
 )
 # Categorical slots 1-4 (validated palette); network sizes use one sequential blue ramp.
 BLUE, ORANGE, AQUA, PURPLE, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#8e5cd9", "#8a8a85"
@@ -26,6 +28,12 @@ SHORT = {
     "laplace": "Laplace",
 }
 SIZE_RAMP = ["#a9c9f2", "#6fa3e6", "#2a78d6", "#1a4f94"]
+
+
+@st.cache_data
+def sorting() -> dict | None:
+    """Raw follow-up B output, or None before the experiment has been run."""
+    return json.loads(SORTING_PATH.read_text()) if SORTING_PATH.exists() else None
 
 
 @st.cache_data
@@ -342,11 +350,257 @@ with tab_glass:
         )
 
 with tab_sort:
-    st.header("Mass sorting")
-    empty_state(
-        "Next up. Release messages of many masses from the same starts and measure how much "
-        "a message's mass tells you about which deep well it reaches first."
-    )
+    st.header("Do messages sort by mass?")
+    srt = sorting()
+    if srt is None:
+        empty_state("No results yet. Run the mass-sorting experiment to fill this section.")
+    else:
+        masses = srt["config"]["masses"]
+        R = pd.DataFrame(srt["runs"])
+        PM = pd.DataFrame(
+            [
+                dict(graph=r.graph, kind=r.kind, par=r.par, seed=r.seed, **x)
+                for r in R.itertuples()
+                for x in r.per_mass
+            ]
+        )
+        mouse = {m["field"]: m for m in srt["mouse"]}
+
+        st.subheader("The question")
+        st.write(
+            "Release messages of many masses from the same node. Do light and heavy ones end "
+            "up in different deep wells? In the solar-system picture: does the heaviness of "
+            "what you throw decide which gravity well catches it?"
+        )
+
+        st.subheader("How I measured it")
+        st.markdown(
+            "- **Deep basins:** the destination T (deepest 10% of wells) usually splits into "
+            "several separate clusters of linked target nodes. Each cluster is a *deep basin*.\n"
+            "- **Exact destinations:** for every start and mass, absorption probabilities give "
+            "the chance of reaching each deep basin first. These are linear solves, not "
+            "simulations, checked against Monte Carlo in the tests.\n"
+            f"- **Masses:** {', '.join(f'{m:g}' for m in masses)}, released in equal numbers.\n"
+            "- **Destination sorting:** how much a message's mass tells you about the basin it "
+            "reaches, given where it started: the mutual information between mass and basin, "
+            "divided by the entropy of mass. 0 means mass is irrelevant; 1 means mass alone "
+            "decides the basin.\n"
+            "- **Settling sorting:** the same quantity for where messages spend their time in "
+            "the long run, from the closed-form stationary distribution.\n"
+            f"- **Settings:** BA and ER graphs (n = 1,000), "
+            f"{R.groupby(['kind', 'par']).ngroups} fields per graph (the ρ dial and the heat "
+            f"kernel) with {srt['config']['seeds']} seeds each, plus the mouse connectome."
+        )
+
+        st.subheader("Each step up in mass sends messages somewhere new")
+        rough = R[(R["kind"] == "rho") & (R["par"] == 0.0)]
+        tv = np.mean(np.array(rough["tv"].tolist()), axis=0)
+        labels = [f"λ = {m:g}" for m in masses]
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = go.Figure(
+                go.Heatmap(
+                    z=tv,
+                    x=labels,
+                    y=labels,
+                    colorscale="Blues",
+                    zmin=0,
+                    zmax=1,
+                    text=np.round(tv, 2),
+                    texttemplate="%{text}",
+                    colorbar=dict(title="share"),
+                    hovertemplate="%{y} vs %{x}<br>destinations differ for %{z:.0%}<extra></extra>",
+                )
+            )
+            fig.update_layout(height=380, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, key="sort_tv", width="stretch", theme="streamlit")
+        with col_b:
+            fig = go.Figure()
+            for gname, dash in (("BA", "solid"), ("ER", "dash")):
+                for par, color in ((0.0, BLUE), (0.6, ORANGE), (1.0, AQUA)):
+                    sub = R[(R["graph"] == gname) & (R["kind"] == "rho") & (R["par"] == par)]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=srt["config"]["lams"],
+                            y=np.mean(np.array(sub["tv_curve"].tolist()), axis=0),
+                            mode="lines",
+                            name=f"{gname}, ρ = {par:g}",
+                            line=dict(color=color, dash=dash, width=2),
+                            hovertemplate=f"{gname}, ρ = {par:g}<br>λ = %{{x}}<br>"
+                            "differs from massless: %{y:.0%}<extra></extra>",
+                        )
+                    )
+            fig.update_layout(
+                height=380,
+                xaxis_title="mass λ",
+                yaxis=dict(title="destinations differing from massless", tickformat=".0%"),
+                legend=dict(orientation="h", y=-0.3),
+            )
+            st.plotly_chart(fig, key="sort_curve", width="stretch", theme="streamlit")
+        steps = [tv[i, i + 1] for i in range(len(masses) - 1)]
+        st.caption(
+            "Left: total-variation distance between the destination basins of two masses "
+            "released from the same start, averaged over starts, on rough fields (ρ = 0, BA and "
+            f"ER, 8 seeds each). A massless and a λ = {masses[-1]:g} message reach different deep "
+            f"basins {tv[0, -1]:.0%} of the time. Each step up the mass ladder moves "
+            f"{min(steps):.0%}–{max(steps):.0%} of destinations. Right: the same distance "
+            "against a massless message over the full mass range; on smoother fields there is "
+            "less to sort into."
+        )
+
+        st.subheader("Sorting needs separate deep basins")
+        fig = go.Figure()
+        for (gname, kind), sub in R.groupby(["graph", "kind"]):
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["n_basins"],
+                    y=sub["dest_sorting"],
+                    mode="markers",
+                    name=f"{gname}, {'ρ dial' if kind == 'rho' else 'heat kernel'}",
+                    marker=dict(
+                        color=BLUE if gname == "BA" else ORANGE,
+                        symbol="circle" if kind == "rho" else "diamond",
+                        size=7,
+                        opacity=0.8,
+                    ),
+                    customdata=sub[["par", "trap_share"]],
+                    hovertemplate=(
+                        "%{x} deep basins<br>sorting = %{y:.3f}<br>parameter %{customdata[0]}, "
+                        "trap share %{customdata[1]:.1%}<extra></extra>"
+                    ),
+                )
+            )
+        fig.update_layout(
+            height=400,
+            xaxis=dict(title="number of separate deep basins", type="log"),
+            yaxis_title="destination sorting (share of mass entropy)",
+            legend=dict(orientation="h", y=-0.25),
+        )
+        st.plotly_chart(fig, key="sort_basins", width="stretch", theme="streamlit")
+        rho_bn = R[["n_basins", "dest_sorting"]].corr(method="spearman").iloc[0, 1]
+        rho_tr = R[["trap_share", "dest_sorting"]].corr(method="spearman").iloc[0, 1]
+        single = R[R["n_basins"] == 1]
+        st.caption(
+            f"{len(R)} settings. Sorting follows the number of separate deep basins (rank "
+            f"correlation {rho_bn:.2f}) more closely than roughness (trap share, {rho_tr:.2f}). "
+            f"When the deepest wells form one connected cluster ({len(single)} settings, all "
+            "BA with gravity closely tracking degree, ρ ≥ 0.8), there is nothing to sort into "
+            "and sorting is 0. "
+            f"The largest value is {R['dest_sorting'].max():.2f}: mass shapes destinations, but "
+            "the start still matters more."
+        )
+
+        st.subheader("Heavy messages take the nearest way in, not the biggest well")
+        cases = {
+            "BA, ρ = 0": PM[(PM["graph"] == "BA") & (PM["kind"] == "rho") & (PM["par"] == 0.0)],
+            "ER, ρ = 0": PM[(PM["graph"] == "ER") & (PM["kind"] == "rho") & (PM["par"] == 0.0)],
+            "Mouse, FA": pd.DataFrame(mouse["FA"]["per_mass"]),
+        }
+        colors = {"BA, ρ = 0": BLUE, "ER, ρ = 0": ORANGE, "Mouse, FA": AQUA}
+        fig = make_subplots(
+            rows=1,
+            cols=3,
+            subplot_titles=(
+                "Hops to the destination",
+                "Depth of the destination node",
+                "Reaching the deepest basin",
+            ),
+        )
+        for name, sub in cases.items():
+            agg = sub.groupby("lam")[["dest_hops", "dest_depth", "deepest_basin"]].mean()
+            for col, metric in enumerate(("dest_hops", "dest_depth", "deepest_basin"), start=1):
+                fig.add_trace(
+                    go.Scatter(
+                        x=agg.index,
+                        y=agg[metric],
+                        mode="lines+markers",
+                        name=name,
+                        legendgroup=name,
+                        showlegend=col == 1,
+                        line=dict(color=colors[name], width=2),
+                        hovertemplate=f"{name}<br>λ = %{{x}}<br>%{{y:.3f}}<extra></extra>",
+                    ),
+                    row=1,
+                    col=col,
+                )
+        fig.update_xaxes(title_text="mass λ")
+        fig.update_yaxes(tickformat=".0%", row=1, col=3)
+        fig.update_layout(height=380, legend=dict(orientation="h", y=-0.3))
+        st.plotly_chart(fig, key="sort_where", width="stretch", theme="streamlit")
+
+        def at(name, lam, metric):
+            sub = cases[name]
+            return float(sub[sub["lam"] == lam][metric].mean())
+
+        st.caption(
+            f"From λ = 0 to {masses[-1]:g}, the trip into T shortens (BA: "
+            f"{at('BA, ρ = 0', 0.0, 'dest_hops'):.1f} to "
+            f"{at('BA, ρ = 0', masses[-1], 'dest_hops'):.1f} hops) and lands on a deeper target "
+            "node, because heavy messages enter T through its deepest nearby edge. But they are "
+            "barely more likely to reach the single deepest basin (BA: "
+            f"{at('BA, ρ = 0', 0.0, 'deepest_basin'):.1%} to "
+            f"{at('BA, ρ = 0', masses[-1], 'deepest_basin'):.1%}), and on the mouse brain with FA "
+            f"less likely ({at('Mouse, FA', 0.0, 'deepest_basin'):.0%} to "
+            f"{at('Mouse, FA', masses[-1], 'deepest_basin'):.0%}). Light messages wander far "
+            "enough to find distant basins; heavy ones fall into the first deep basin downhill."
+        )
+
+        st.subheader("Where they settle")
+        st.write(
+            "Over the long run, position sorts by mass everywhere: settling sorting is "
+            f"{R['settle_sorting'].min():.2f}–{R['settle_sorting'].max():.2f} across all "
+            "settings, even where destination sorting is 0. Heavy messages pile into the "
+            "deepest wells and stay; light ones spread out. So mass always separates messages "
+            "eventually, but *which* deep basin they reach first depends on mass only when "
+            "there are several to choose from."
+        )
+
+        st.subheader("The mouse brain")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    dict(
+                        field={
+                            "log volume": "Region volume (log)",
+                            "FA": "Fractional anisotropy",
+                        }.get(k, "Random (control)"),
+                        basins=m["n_basins"],
+                        trap=m["trap_share"],
+                        dest=m["dest_sorting"],
+                        settle=m["settle_sorting"],
+                    )
+                    for k, m in mouse.items()
+                ]
+            ),
+            hide_index=True,
+            column_config={
+                "field": "Gravity",
+                "basins": st.column_config.NumberColumn("Deep basins", format="%d"),
+                "trap": st.column_config.NumberColumn("Trap share", format="percent"),
+                "dest": st.column_config.NumberColumn("Destination sorting", format="%.3f"),
+                "settle": st.column_config.NumberColumn("Settling sorting", format="%.3f"),
+            },
+        )
+        st.caption(
+            "Same rule on the 332-region backbone. Region volume tracks the wiring, so its deep "
+            "wells form a single cluster and destinations do not sort. FA's deep wells are "
+            "scattered over 12 basins and they do. The node-to-region mapping behind volume and "
+            "FA is inferred, not documented."
+        )
+
+        st.subheader("What it means")
+        st.markdown(
+            "- **Yes, messages sort by mass**, and smoothly: each step up the mass ladder moves a "
+            "similar share of destinations, with no threshold.\n"
+            "- **The sorting rule is local.** Heavy messages fall into the nearest deep basin "
+            "downhill from where they start; light messages diffuse and reach more distant "
+            "ones. Mass does not steer messages toward the single biggest well.\n"
+            "- **Sorting needs a fragmented destination.** It tracks the number of separate "
+            "deep basins, which is why gravity that follows the hubs (one cluster of deep "
+            "wells) cannot sort at all.\n"
+            "- **Limits:** the destination is fixed as the top 10% of g, so the number of basins "
+            "and the landscape's roughness change together and cannot be fully separated here."
+        )
 with tab_social:
     st.header("A social network")
     empty_state(
