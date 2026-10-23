@@ -201,8 +201,8 @@ ENTRIES: tuple[Entry, ...] = (
         type=EntryType.MODEL,
         path="app_pages/network_science/gravity_mass.py",
         summary=(
-            "A random walk where nodes have gravity and messages have mass. Heavy messages "
-            "climb toward high-gravity nodes but get trapped on local peaks, so there is a "
+            "A random walk where nodes are gravity wells and messages have mass. Heavy "
+            "messages fall toward deep wells but get caught in shallow ones, so there is a "
             "best mass, set by how rough the landscape is. Explore it live, then see the "
             "full runs on synthetic graphs and a mouse connectome."
         ),
