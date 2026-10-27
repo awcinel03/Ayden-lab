@@ -26,7 +26,7 @@ CODE_PATHS = (
 BLUE, ORANGE, AQUA, PURPLE, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#8e5cd9", "#8a8a85"
 FIELD_COLORS = {"gauss": BLUE, "exp_deep": ORANGE, "exp_shallow": AQUA, "laplace": PURPLE}
 SHORT = {
-    "gauss": "Gaussian",
+    "gauss": "Normally distributed",
     "exp_deep": "Exponential, deep tail",
     "exp_shallow": "Exponential, shallow tail",
     "laplace": "Laplace",
@@ -200,9 +200,9 @@ with tab_glass:
             f"{', '.join(f'{n:,}' for n in cfg['sizes'])}, with "
             f"{cfg['seeds']['500']} seeds per size up to 2,000 and {cfg['seeds']['4000']} at "
             "4,000. These sizes need the new sparse solver; it matches the dense one to 1e-9.\n"
-            "- **Four shapes of gravity**, all standardized: Gaussian, exponential with its long "
-            "tail toward deep wells, exponential with its long tail toward shallow ground, and "
-            "Laplace (both tails exponential).\n"
+            "- **Four distributions of well depth**, all standardized: normally distributed, "
+            "exponential with its long tail toward deep wells, exponential with its long tail "
+            "toward shallow ground, and Laplace (both tails exponential).\n"
             "- **Climbs:** for every trap (a local well outside T), the floor-to-rim climb from "
             "the first entry's Arrhenius test.\n"
             "- **Order parameter:** group nodes into *basins*, each node joining the well it "
@@ -359,7 +359,7 @@ with tab_glass:
             T,
             hide_index=True,
             column_config={
-                "field": "Gravity shape",
+                "field": "Depth distribution",
                 "gamma0": st.column_config.NumberColumn("Tail scale Γ₀", format="%.2f"),
                 "lam_pred": st.column_config.NumberColumn("λ_c = 1/Γ₀", format="%.1f"),
                 "lam_fs": st.column_config.NumberColumn("λ_c from finite size", format="%.1f"),
@@ -377,31 +377,34 @@ with tab_glass:
             return float(np.interp(lam, lams, F[kind]["expo"]))
 
         st.markdown(
-            "- **Condensation happens, and it needs no special landscape.** In all four shapes "
-            "the finite-size slope moves from about −1 to about 0 over a narrow window of mass: "
+            "- **Condensation happens, and it needs no special landscape.** In all four "
+            "distributions the finite-size slope moves from about −1 to about 0 over a narrow "
+            "window of mass: "
             "finite-size estimates of λ_c run from "
-            f"{min(fs.values()):.1f} to {max(fs.values()):.1f}. For Gaussian gravity the slope is "
+            f"{min(fs.values()):.1f} to {max(fs.values()):.1f}. With normally distributed depths "
+            "the slope is "
             f"{slope_at('gauss', 2):.2f} at λ = 2 and {slope_at('gauss', 6):.2f} at λ = 6. Above "
             "the window, the share of time held by the deepest few wells no longer shrinks with "
             "network size. That is the signature of a glass-like, condensed phase.\n"
-            "- **Exponential climbs come for free.** Even with Gaussian gravity, trap climbs "
-            "have a roughly exponential tail. A climb is a difference between edge depths "
+            "- **Exponential climbs come for free.** Even with normally distributed depths, trap "
+            "climbs have a roughly exponential tail. A climb is a difference between edge depths "
             "(floor minus rim), and extremes of such differences tend toward exponential tails. "
             "So the trap model applies without building it in.\n"
-            "- **For Gaussian gravity the trap model gets the critical mass right:** λ_c = 1/Γ₀ = "
+            "- **With normally distributed depths the trap model gets the critical mass right:** "
+            "λ_c = 1/Γ₀ = "
             f"{F['gauss']['lam_pred']:.1f} against {F['gauss']['lam_fs']:.1f} from finite-size "
             "scaling.\n"
-            "- **For the other shapes it does not.** Their climb tails are not cleanly "
+            "- **For the other distributions it does not.** Their climb tails are not cleanly "
             "exponential: the mean excess drifts with the threshold (down for the deep and "
-            "Laplace shapes, up for the shallow one). A single Γ₀ then misses: "
+            "Laplace distributions, up for the shallow one). A single Γ₀ then misses: "
             + "; ".join(
                 f"{SHORT[k]} {F[k]['lam_pred']:.1f} predicted, {F[k]['lam_fs']:.1f} measured"
                 for k in ("exp_deep", "exp_shallow", "laplace")
             )
             + ". Measuring Γ₀ only on the deepest traps narrows the gap but does not close it "
-            "for every shape at once, so I report the estimator fixed before the full run.\n"
+            "for every distribution at once, so I report the estimator fixed before the full run.\n"
             "- **Condensation is weaker than the trap model expects.** At λ = 10 and n = 4,000, "
-            f"Y₂ is {F['gauss']['mean'][-1][-1]:.2f} for Gaussian gravity against "
+            f"Y₂ is {F['gauss']['mean'][-1][-1]:.2f} with normally distributed depths, against "
             f"{1 - F['gauss']['lam_pred'] / lams[-1]:.2f} predicted. Time stays split across a few "
             "wells rather than one.\n"
             "- **Limits:** sizes span a factor of 8 (500 to 4,000 nodes). That shows a clear "

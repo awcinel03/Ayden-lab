@@ -48,7 +48,7 @@ CONFIG = {
     "target": "top 10% of g",
 }
 FIELD_LABELS = {
-    "gauss": "Gaussian",
+    "gauss": "Normally distributed",
     "exp_deep": "Exponential, long tail toward deep wells",
     "exp_shallow": "Exponential, long tail toward shallow ground",
     "laplace": "Laplace (exponential tails on both sides)",
